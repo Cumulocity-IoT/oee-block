@@ -30,6 +30,9 @@ event Oee_$Parameters {
 
 event Oee_$State {
     integer calculation_path;
+    string output1;
+    string output2;
+    string output3;
     action<float, float, float, float> returns Value oee_calculation;
     TimeInStateExpressionParser machine_status;
     dictionary<string,StatefulExpressionParser> sep;
@@ -77,42 +80,50 @@ event Oee {
     }
 
 	action setupCalculation(Activation $activation, Oee_$State $blockState) {
+        $blockState.calculation_path := path();
+        if($blockState.calculation_path=1 or $blockState.calculation_path=2) {
+            $blockState.oee_calculation := performOEECalculation_APT_APA_AQA;
+            $blockState.output1 := OEE.ACTUAL_PRODUCTION_TIME;
+            $blockState.output2 := OEE.ACTUAL_PRODUCTION_AMOUNT;
+            $blockState.output3 := OEE.ACTUAL_QUALITY_AMOUNT;
+        } else if($blockState.calculation_path=3) {
+            $blockState.oee_calculation := performOEECalculation_APT_AQA_QLA;
+            $blockState.output1 := OEE.ACTUAL_PRODUCTION_TIME;
+            $blockState.output2 := OEE.ACTUAL_QUALITY_AMOUNT;
+            $blockState.output3 := OEE.QUALITY_LOSS_AMOUNT;
+        } else if($blockState.calculation_path=4) {
+            $blockState.output1 := OEE.ACTUAL_PRODUCTION_TIME;
+            $blockState.output2 := OEE.ACTUAL_PRODUCTION_AMOUNT;
+            $blockState.output3 := OEE.QUALITY_LOSS_AMOUNT;
+            $blockState.oee_calculation := performOEECalculation_APT_APA_QLA;
+        }
+            $blockState.results[$blockState.output1] := new sequence<OutputValue>;
+            $blockState.results[$blockState.output2] := new sequence<OutputValue>;
+            $blockState.results[$blockState.output3] := new sequence<OutputValue>;
+
         if($blockState.calculation_path=1) {
             $blockState.machine_status := TimeInStateExpressionParser.parseText("value", $activation.timestamp, $parameters.interval);
             $blockState.sep.add(OEE.ACTUAL_PRODUCTION_AMOUNT, 
                                 StatefulExpressionParser.parseText("value", Util.sum, Util.diff, 0.0, $activation.timestamp, $parameters.interval));
             $blockState.sep.add(OEE.ACTUAL_QUALITY_AMOUNT, 
                                 StatefulExpressionParser.parseText("value", Util.sum, Util.diff, 0.0, $activation.timestamp, $parameters.interval));
-            $blockState.results[OEE.ACTUAL_PRODUCTION_TIME] := new sequence<OutputValue>;
-            $blockState.results[OEE.ACTUAL_PRODUCTION_AMOUNT] := new sequence<OutputValue>;
-            $blockState.results[OEE.ACTUAL_QUALITY_AMOUNT] := new sequence<OutputValue>;
         } else if($blockState.calculation_path=2) {
             $blockState.machine_status := TimeInStateExpressionParser.parseText("value", $activation.timestamp, $parameters.interval);
             $blockState.sep.add(OEE.ACTUAL_PRODUCTION_AMOUNT, 
                                 StatefulExpressionParser.parseText("value", Util.sum, Util.diff, 0.0, $activation.timestamp, $parameters.interval));
-            $blockState.results[OEE.ACTUAL_PRODUCTION_TIME] := new sequence<OutputValue>;                                   
-            $blockState.results[OEE.ACTUAL_PRODUCTION_AMOUNT] := new sequence<OutputValue>;
-            $blockState.results[OEE.ACTUAL_QUALITY_AMOUNT] := new sequence<OutputValue>;
-            // quality status handler
+            // TODO quality status handler
         } else if($blockState.calculation_path=3) {
             $blockState.machine_status := TimeInStateExpressionParser.parseText("value", $activation.timestamp, $parameters.interval);
             $blockState.sep.add(OEE.ACTUAL_QUALITY_AMOUNT, 
                                 StatefulExpressionParser.parseText("value", Util.sum, Util.diff, 0.0, $activation.timestamp, $parameters.interval));
             $blockState.sep.add(OEE.QUALITY_LOSS_AMOUNT, 
                                 StatefulExpressionParser.parseText("value", Util.sum, Util.diff, 0.0, $activation.timestamp, $parameters.interval));
-            $blockState.results[OEE.ACTUAL_PRODUCTION_TIME] := new sequence<OutputValue>;
-            $blockState.results[OEE.QUALITY_LOSS_AMOUNT] := new sequence<OutputValue>;
-            $blockState.results[OEE.ACTUAL_QUALITY_AMOUNT] := new sequence<OutputValue>;
         } else if($blockState.calculation_path=4) {
             $blockState.machine_status := TimeInStateExpressionParser.parseText("value", $activation.timestamp, $parameters.interval);
             $blockState.sep.add(OEE.ACTUAL_PRODUCTION_AMOUNT, 
                                 StatefulExpressionParser.parseText("value", Util.sum, Util.diff, 0.0, $activation.timestamp, $parameters.interval));
             $blockState.sep.add(OEE.QUALITY_LOSS_AMOUNT, 
                                 StatefulExpressionParser.parseText("value", Util.sum, Util.diff, 0.0, $activation.timestamp, $parameters.interval));            
-            $blockState.results[OEE.ACTUAL_PRODUCTION_TIME] := new sequence<OutputValue>;
-            $blockState.results[OEE.ACTUAL_PRODUCTION_AMOUNT] := new sequence<OutputValue>;
-            $blockState.results[OEE.QUALITY_LOSS_AMOUNT] := new sequence<OutputValue>;
-
         }
 	}
 
@@ -331,17 +342,6 @@ event Oee {
         return details;
     }
 
-    action setupBlockState(Oee_$State $blockState) {
-        $blockState.calculation_path := path();
-        if($blockState.calculation_path=1 or $blockState.calculation_path=2) {
-            $blockState.oee_calculation := performOEECalculation_APT_APA_AQA;
-        } else if($blockState.calculation_path=3) {
-            $blockState.oee_calculation := performOEECalculation_APT_AQA_QLA;
-        } else if($blockState.calculation_path=4) {
-            $blockState.oee_calculation := performOEECalculation_APT_APA_QLA;
-        }
-    }
-
     /**
      *
      * @param $activation The current activation.
@@ -361,7 +361,6 @@ event Oee {
                     Value $input_status, Oee_$State $blockState) {
         
         if($blockState.calculation_path=0) {
-            setupBlockState($blockState);
             setupCalculation($activation, $blockState);
         }
 
@@ -381,33 +380,30 @@ event Oee {
             $blockState.results[OEE.ACTUAL_QUALITY_AMOUNT].appendSequence(result);
         }
 
-        sequence<OutputValue> aptr := $blockState.results[OEE.ACTUAL_PRODUCTION_TIME];
-        sequence<OutputValue> apar := $blockState.results[OEE.ACTUAL_PRODUCTION_AMOUNT];        
-        sequence<OutputValue> aqar := $blockState.results[OEE.ACTUAL_QUALITY_AMOUNT];
         sequence<float> toClear := new sequence<float>; 
-        OutputValue apa;
-        for apa in apar {
-            optional<OutputValue> apt := findin(aptr,apa.time);
-            optional<OutputValue> aqa := findin(aqar,apa.time);
-            ifpresent apt,aqa {
-                Value details := roundResults($blockState.oee_calculation($parameters.interval, apt.value, apa.value, aqa.value));
+        OutputValue output1;
+        for output1 in $blockState.results[$blockState.output1] {
+            optional<OutputValue> output2 := findin($blockState.results[$blockState.output2],output1.time);
+            optional<OutputValue> output3 := findin($blockState.results[$blockState.output3],output1.time);
+            ifpresent output2,output3 {
+                Value details := roundResults($blockState.oee_calculation($parameters.interval, output1.value, output2.value, output3.value));
                 details.value := true;
-                details.timestamp := apa.time;
+                details.timestamp := output1.time;
                 $setOutput_oee($activation, <float>details.properties[OEE.OEE]);
                 $setOutput_availability($activation, <float>details.properties[OEE.AVAILABILTY]);
                 $setOutput_performance($activation, <float>details.properties[OEE.PERFORMANCE]);
                 $setOutput_quality($activation, <float>details.properties[OEE.QUALITY]);
-                $setOutput_timestamp($activation, apa.time);
+                $setOutput_timestamp($activation, output1.time);
                 $setOutput_details($activation, details);
-                toClear.append(apa.time);
+                toClear.append(output1.time);
             }
         }
-        $blockState.results[OEE.ACTUAL_PRODUCTION_TIME] := clear(aptr, toClear);
-        $blockState.results[OEE.ACTUAL_PRODUCTION_AMOUNT] := clear(apar, toClear);
-        $blockState.results[OEE.ACTUAL_QUALITY_AMOUNT] := clear(aqar, toClear);
-        // apply to inputs
-        // take into account machine status for other inputs
-        // other calculation methods
+        $blockState.results[$blockState.output1] := clear($blockState.results[$blockState.output1], toClear);
+        $blockState.results[$blockState.output2] := clear($blockState.results[$blockState.output2], toClear);
+        $blockState.results[$blockState.output3] := clear($blockState.results[$blockState.output3], toClear);
+        // TODO apply to all inputs
+        // TODO take into account machine status for other inputs
+        // TODO other calculation methods
     }
 
     action roundResults(Value result) returns Value {
