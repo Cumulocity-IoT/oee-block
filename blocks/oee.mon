@@ -30,7 +30,7 @@ event Oee_$Parameters {
 
 event Oee_$State {
     integer calculation_path;
-    action<Activation, float, float, float, float, float> oee_calculation;
+    action<float, float, float, float> returns Value oee_calculation;
     TimeInStateExpressionParser machine_status;
     dictionary<string,StatefulExpressionParser> sep;
     dictionary<string,sequence<OutputValue>> results;
@@ -199,27 +199,22 @@ event Oee {
         return result;	
 	}
 
-	action performOEECalculation_APT_APA_AQA(Activation $activation, float interval, float timestamp, 
-                                float actualProductionTime, float actualProductionAmount, float actualQualityAmount) {
-
+	action performOEECalculation_APT_APA_AQA(float interval, float actualProductionTime, float actualProductionAmount, float actualQualityAmount) returns Value {
 		float idealCycleAmount := $parameters.ica;
 		float cycleLength := interval / idealCycleAmount;
 		float idealCycleTime := cycleLength; 
 		float potentialProductionTime := interval;
-
 		// Level 2
 		float idealAmount := (potentialProductionTime / cycleLength) * idealCycleAmount;
 		float idealProductionAmount := (actualProductionTime / cycleLength) * idealCycleAmount;
 		float idealQualityTime := (actualQualityAmount / idealCycleAmount) * cycleLength;
 		float idealMachineRuntime := (actualProductionAmount / idealCycleAmount) * cycleLength;
 		float qualityLossAmount := actualProductionAmount - actualQualityAmount;
-		
 		// Level 3
 		float availabilityLossAmount := idealAmount - idealProductionAmount;
 		float performanceLossAmount := idealProductionAmount - actualProductionAmount;
 		float performanceLossTime := actualProductionTime - idealMachineRuntime;
-		float qualityLossTime := (qualityLossAmount / idealCycleAmount) * cycleLength;
-		
+		float qualityLossTime := (qualityLossAmount / idealCycleAmount) * cycleLength;	
 		// Level 4
 		float availabilityLossTime := (availabilityLossAmount / idealCycleAmount) * cycleLength;
 		float availability := 0.0;
@@ -234,49 +229,25 @@ event Oee {
 		if(actualProductionAmount > 0.0) {
 			quality := actualQualityAmount / actualProductionAmount;
 		}
-		
 		// Level 5
 		float oee := availability * performance * quality;
 
-        $setOutput_oee($activation, oee);
-        $setOutput_availability($activation, availability);
-        $setOutput_performance($activation, performance);
-        $setOutput_quality($activation, quality);
-        $setOutput_timestamp($activation, timestamp);
-
         Value details := new Value;
-        details.value := true;
-        details.timestamp := timestamp;
-        details.properties := {
-            OEE.OEE: oee,
-            OEE.PERFORMANCE: performance,
-            OEE.AVAILABILTY: availability,
-            OEE.QUALITY: quality,
-            OEE.ACTUAL_PRODUCTION_AMOUNT: actualProductionAmount,
-            OEE.ACTUAL_PRODUCTION_TIME: actualProductionTime,
-            OEE.ACTUAL_QUALITY_AMOUNT: actualQualityAmount,
-            OEE.IDEAL_AMOUNT: idealAmount,
-            OEE.IDEAL_CYCLE_TIME: idealCycleTime,
-            OEE.IDEAL_QUALITY_TIME: idealQualityTime,
-            OEE.IDEAL_MACHINE_RUNTIME: idealMachineRuntime,
-            OEE.QUALITY_LOSS_AMOUNT: qualityLossAmount,
-            OEE.AVAILABILITY_LOSS_AMOUNT: availabilityLossAmount,
-            OEE.PERFORMANCE_LOSS_AMOUNT: performanceLossAmount,
-            OEE.PERFORMANCE_LOSS_TIME: performanceLossTime,
-            OEE.QUALITY_LOSS_TIME: qualityLossTime,
-            OEE.AVAILABILITY_LOSS_TIME: availabilityLossTime
+        details.properties := {OEE.OEE: oee, OEE.PERFORMANCE: performance, OEE.AVAILABILTY: availability, OEE.QUALITY: quality,
+            OEE.ACTUAL_PRODUCTION_AMOUNT: actualProductionAmount, OEE.ACTUAL_PRODUCTION_TIME: actualProductionTime,
+            OEE.ACTUAL_QUALITY_AMOUNT: actualQualityAmount, OEE.IDEAL_AMOUNT: idealAmount, OEE.IDEAL_CYCLE_TIME: idealCycleTime,
+            OEE.IDEAL_QUALITY_TIME: idealQualityTime, OEE.IDEAL_MACHINE_RUNTIME: idealMachineRuntime, OEE.QUALITY_LOSS_AMOUNT: qualityLossAmount,
+            OEE.AVAILABILITY_LOSS_AMOUNT: availabilityLossAmount, OEE.PERFORMANCE_LOSS_AMOUNT: performanceLossAmount, 
+            OEE.PERFORMANCE_LOSS_TIME: performanceLossTime, OEE.QUALITY_LOSS_TIME: qualityLossTime, OEE.AVAILABILITY_LOSS_TIME: availabilityLossTime
         };
-        $setOutput_details($activation, details);
+        return details;
 	}
 
-	action performOEECalculation_APT_AQA_QLA(Activation $activation, float interval, float timestamp, 
-                                float actualProductionTime, float actualQualityAmount, float qualityLossAmount) {
-	
+	action performOEECalculation_APT_AQA_QLA(float interval, float actualProductionTime, float actualQualityAmount, float qualityLossAmount) returns Value {
     	float idealCycleAmount := $parameters.ica;
 		float cycleLength := interval / idealCycleAmount;
 		float idealCycleTime := cycleLength; 
-		float potentialProductionTime := interval;
-         
+		float potentialProductionTime := interval;  
 		// Level 2
 		float availabilityLossTime := potentialProductionTime - actualProductionTime; 
 		float idealAmount := (potentialProductionTime / cycleLength) * idealCycleAmount;
@@ -284,12 +255,10 @@ event Oee {
 		float idealQualityTime := (actualQualityAmount / idealCycleAmount) * cycleLength;
 		float qualityLossTime := (qualityLossAmount / idealCycleAmount) * cycleLength;
 		float actualProductionAmount := actualQualityAmount + qualityLossAmount;
-		
 		// Level 3
 		float availabilityLossAmount := (availabilityLossTime * idealCycleAmount) / cycleLength; 
 		float idealMachineRuntime := (actualProductionAmount / idealCycleAmount) * cycleLength;
 		float performanceLossAmount := idealProductionAmount - actualProductionAmount;
-		
 		// Level 4
 		float performanceLossTime := ((performanceLossAmount / idealCycleAmount) * cycleLength);
 		float availability := 0.0;
@@ -304,60 +273,35 @@ event Oee {
 		if(actualProductionAmount > 0.0) {
 			quality := actualQualityAmount / actualProductionAmount;
 		}
-		
 		// Level 5
 		float oee := availability * performance * quality;
 		
-        $setOutput_oee($activation, oee);
-        $setOutput_availability($activation, availability);
-        $setOutput_performance($activation, performance);
-        $setOutput_quality($activation, quality);
-        $setOutput_timestamp($activation, timestamp);
-
         Value details := new Value;
-        details.value := true;
-        details.timestamp := timestamp;
-        details.properties := {
-            OEE.OEE: oee,
-            OEE.PERFORMANCE: performance,
-            OEE.AVAILABILTY: availability,
-            OEE.QUALITY: quality,
-            OEE.ACTUAL_PRODUCTION_AMOUNT: actualProductionAmount,
-            OEE.ACTUAL_PRODUCTION_TIME: actualProductionTime,
-            OEE.ACTUAL_QUALITY_AMOUNT: actualQualityAmount,
-            OEE.IDEAL_AMOUNT: idealAmount,
-            OEE.IDEAL_CYCLE_TIME: idealCycleTime,
-            OEE.IDEAL_QUALITY_TIME: idealQualityTime,
-            OEE.IDEAL_MACHINE_RUNTIME: idealMachineRuntime,
-            OEE.QUALITY_LOSS_AMOUNT: qualityLossAmount,
-            OEE.AVAILABILITY_LOSS_AMOUNT: availabilityLossAmount,
-            OEE.PERFORMANCE_LOSS_AMOUNT: performanceLossAmount,
-            OEE.PERFORMANCE_LOSS_TIME: performanceLossTime,
-            OEE.QUALITY_LOSS_TIME: qualityLossTime,
-            OEE.AVAILABILITY_LOSS_TIME: availabilityLossTime
+        details.properties := {OEE.OEE: oee, OEE.PERFORMANCE: performance, OEE.AVAILABILTY: availability, OEE.QUALITY: quality,
+            OEE.ACTUAL_PRODUCTION_AMOUNT: actualProductionAmount, OEE.ACTUAL_PRODUCTION_TIME: actualProductionTime,
+            OEE.ACTUAL_QUALITY_AMOUNT: actualQualityAmount, OEE.IDEAL_AMOUNT: idealAmount, OEE.IDEAL_CYCLE_TIME: idealCycleTime,
+            OEE.IDEAL_QUALITY_TIME: idealQualityTime, OEE.IDEAL_MACHINE_RUNTIME: idealMachineRuntime, OEE.QUALITY_LOSS_AMOUNT: qualityLossAmount,
+            OEE.AVAILABILITY_LOSS_AMOUNT: availabilityLossAmount, OEE.PERFORMANCE_LOSS_AMOUNT: performanceLossAmount, 
+            OEE.PERFORMANCE_LOSS_TIME: performanceLossTime, OEE.QUALITY_LOSS_TIME: qualityLossTime, OEE.AVAILABILITY_LOSS_TIME: availabilityLossTime
         };
-        $setOutput_details($activation, details);
+        return details;
     }
 
-	action performOEECalculation_APT_APA_QLA(Activation $activation, float interval, float timestamp, 
-                                float actualProductionTime, float actualProductionAmount, float qualityLossAmount) {
-
+	action performOEECalculation_APT_APA_QLA(float interval, float actualProductionTime, float actualProductionAmount, float qualityLossAmount) returns Value {
     	float idealCycleAmount := $parameters.ica;
 		float cycleLength := interval / idealCycleAmount;
 		float idealCycleTime := cycleLength; 
 		float potentialProductionTime := interval;
-
+        // Level 2
 		float idealAmount := (potentialProductionTime / cycleLength) * idealCycleAmount;
 		float idealProductionAmount := (actualProductionTime / cycleLength) * idealCycleAmount;
 		float idealMachineRuntime := (actualProductionAmount / idealCycleAmount) * cycleLength;
 		float actualQualityAmount := actualProductionAmount - qualityLossAmount;
 		float qualityLossTime := (qualityLossAmount / idealCycleAmount) * cycleLength;
-
 		// Level 3
 		float availabilityLossAmount := idealAmount - idealProductionAmount;
 		float performanceLossAmount := idealProductionAmount - actualProductionAmount;
 		float idealQualityTime := (actualQualityAmount / idealCycleAmount) * cycleLength;
-
 		// Level 4
 		float availabilityLossTime := (availabilityLossAmount / idealCycleAmount) * cycleLength;
 		float performanceLossTime := ((performanceLossAmount / idealCycleAmount) * cycleLength);
@@ -372,40 +316,19 @@ event Oee {
 		float quality := 0.0;
 		if(actualProductionAmount > 0.0) {
 			quality := actualQualityAmount / actualProductionAmount;
-		}
-		
+		}	
 		// Level 5
 		float oee := availability * performance * quality;
 
-        $setOutput_oee($activation, oee);
-        $setOutput_availability($activation, availability);
-        $setOutput_performance($activation, performance);
-        $setOutput_quality($activation, quality);
-        $setOutput_timestamp($activation, timestamp);
-
         Value details := new Value;
-        details.value := true;
-        details.timestamp := timestamp;
-        details.properties := {
-            OEE.OEE: oee,
-            OEE.PERFORMANCE: performance,
-            OEE.AVAILABILTY: availability,
-            OEE.QUALITY: quality,
-            OEE.ACTUAL_PRODUCTION_AMOUNT: actualProductionAmount,
-            OEE.ACTUAL_PRODUCTION_TIME: actualProductionTime,
-            OEE.ACTUAL_QUALITY_AMOUNT: actualQualityAmount,
-            OEE.IDEAL_AMOUNT: idealAmount,
-            OEE.IDEAL_CYCLE_TIME: idealCycleTime,
-            OEE.IDEAL_QUALITY_TIME: idealQualityTime,
-            OEE.IDEAL_MACHINE_RUNTIME: idealMachineRuntime,
-            OEE.QUALITY_LOSS_AMOUNT: qualityLossAmount,
-            OEE.AVAILABILITY_LOSS_AMOUNT: availabilityLossAmount,
-            OEE.PERFORMANCE_LOSS_AMOUNT: performanceLossAmount,
-            OEE.PERFORMANCE_LOSS_TIME: performanceLossTime,
-            OEE.QUALITY_LOSS_TIME: qualityLossTime,
-            OEE.AVAILABILITY_LOSS_TIME: availabilityLossTime
+        details.properties := {OEE.OEE: oee, OEE.PERFORMANCE: performance, OEE.AVAILABILTY: availability, OEE.QUALITY: quality,
+            OEE.ACTUAL_PRODUCTION_AMOUNT: actualProductionAmount, OEE.ACTUAL_PRODUCTION_TIME: actualProductionTime,
+            OEE.ACTUAL_QUALITY_AMOUNT: actualQualityAmount, OEE.IDEAL_AMOUNT: idealAmount, OEE.IDEAL_CYCLE_TIME: idealCycleTime,
+            OEE.IDEAL_QUALITY_TIME: idealQualityTime, OEE.IDEAL_MACHINE_RUNTIME: idealMachineRuntime, OEE.QUALITY_LOSS_AMOUNT: qualityLossAmount,
+            OEE.AVAILABILITY_LOSS_AMOUNT: availabilityLossAmount, OEE.PERFORMANCE_LOSS_AMOUNT: performanceLossAmount, 
+            OEE.PERFORMANCE_LOSS_TIME: performanceLossTime, OEE.QUALITY_LOSS_TIME: qualityLossTime, OEE.AVAILABILITY_LOSS_TIME: availabilityLossTime
         };
-        $setOutput_details($activation, details);
+        return details;
     }
 
     action setupBlockState(Oee_$State $blockState) {
@@ -472,7 +395,15 @@ event Oee {
             optional<OutputValue> apt := findin(aptr,apa.time);
             optional<OutputValue> aqa := findin(aqar,apa.time);
             ifpresent apt,aqa {
-                performOEECalculation_APT_APA_AQA($activation, $parameters.interval, apa.time, $parameters.interval, apa.value, aqa.value);
+                Value details := $blockState.oee_calculation($parameters.interval, $parameters.interval, apa.value, aqa.value);
+                details.value := true;
+                details.timestamp := apa.time;
+                $setOutput_oee($activation, <float>details.properties[OEE.OEE]);
+                $setOutput_availability($activation, <float>details.properties[OEE.AVAILABILTY]);
+                $setOutput_performance($activation, <float>details.properties[OEE.PERFORMANCE]);
+                $setOutput_quality($activation, <float>details.properties[OEE.QUALITY]);
+                $setOutput_timestamp($activation, apa.time);
+                $setOutput_details($activation, details);
                 toClear.append(apa.time);
             }
         }
