@@ -171,7 +171,6 @@ event Workpiece {
 event InputValue {
 	float time;
 	any value;
-	float weight;
 }
 
 event OutputValue {
