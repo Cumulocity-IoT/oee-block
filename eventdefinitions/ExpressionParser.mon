@@ -1,0 +1,596 @@
+package apamax.analyticsbuilder.oee;
+
+using apamax.analyticsbuilder.oee.AST;
+using apamax.analyticsbuilder.oee.Parser;
+using apamax.analyticsbuilder.oee.Compiler;
+using apamax.analyticsbuilder.oee.EvalContext;
+using com.apama.exceptions.Exception;
+
+event Interval {
+	wildcard float start;
+	wildcard float end;	
+	
+	action isIn(float time) returns boolean {
+		return time>=start and time<end;
+	}
+	
+	action beforeOrAtEnd(float time) returns boolean {
+		return time<=end;
+	}
+	
+	action duration() returns float {
+		return end - start;
+	}
+	
+	action durationFrom(float fromTime) returns float {
+		return end - fromTime;
+	}
+	
+	static action intervalName(float interval) returns string {
+		return interval.integralPart().toString()+"s";
+	}
+
+}
+
+event CurrentInterval {
+	wildcard float interval;
+	wildcard float base;
+	wildcard integer count;
+	wildcard float start; 
+	wildcard float end;
+	wildcard string name;
+	wildcard sequence<MachineStatus> statusUpdates;
+	
+	static action build(float interval, float base) returns CurrentInterval {
+		CurrentInterval ci := new CurrentInterval;
+		ci.interval := interval;
+		ci.base := base;
+		ci.count := 0;
+		ci.start := base;
+		ci.end := ci.start + interval;
+		ci.name := Interval.intervalName(interval);
+		ci.statusUpdates := [MachineStatus.build(OEE.MACHINE_UP,"",ci.name).forTime(base)];
+		return ci;
+	}
+	
+	action adjustTo(float time) {
+		if(time>=end) {
+			integer intervalsPassed := ((time-end) / interval).integralPart()+1; 
+			count := count + intervalsPassed;
+			start := base + (interval*count.toFloat());
+			end := start + interval;
+			integer i := 0;
+			integer statusUpdateSize := statusUpdates.size();
+			while i < statusUpdateSize {
+				if (statusUpdates[i].time >= time) {
+					break;
+				} else {
+					i := i + 1;
+				}
+			}
+			sequence<MachineStatus> updated := new sequence<MachineStatus>;
+			integer j := i - 1;
+			while j < statusUpdateSize {
+				updated.append(statusUpdates[j]);
+				j := j + 1;
+			}
+			statusUpdates := updated;
+		}
+	}
+	
+	action intervalsTo(float time) returns sequence<Interval> {
+		if(time>end) {
+			sequence<Interval> result := new sequence<Interval>;
+			integer intervalsPassed := ((time-end) / interval).integralPart()+1;
+			integer i := 0;
+			while i <= intervalsPassed {
+				integer iCount := count+i;
+				float iStart := base + (interval*iCount.toFloat());
+				float iEnd := iStart + interval;
+				result.append(Interval(iStart,iEnd));
+				i := i + 1;
+			}
+			return result;
+		}
+		return [Interval(start,end)];
+	}
+	
+	action isIn(float time) returns boolean {
+		return time>=start and time<end;
+	}
+	
+	action isAfter(float time) returns boolean {
+		return time>=end;
+	}
+	
+	// VT: Looks like this method doesn't take "short shutdowns" into account.
+	// IMO, we should use StatusTracker for caluclation availability time for the given interval.
+	action availabilityIn(float start, float end) returns float {
+		float availability := 0.0;
+		MachineStatus ms;
+		MachineStatus previous := statusUpdates[0];
+		for ms in statusUpdates {
+			if(ms.type=OEE.MACHINE_UP and previous.type=OEE.MACHINE_DOWN) {
+				previous := ms;
+			} else if(ms.type=OEE.MACHINE_DOWN and previous.type=OEE.MACHINE_UP) {
+				if(ms.time>start) {
+					if(previous.time>=start and ms.time<=end) {
+						availability := availability + (ms.time - previous.time);	
+					} else if(previous.time>=start and ms.time>end) {
+						availability := availability + (end - previous.time);
+					} else if(previous.time<start and ms.time<=end) {
+						availability := availability + (ms.time - start);
+					} else if(previous.time<start and ms.time>end) {
+						availability := availability + (end - start);
+					}
+				}
+				previous := ms;
+			}
+			if(ms.time>=end) {
+				break;
+			}
+		}
+		if(previous.type=OEE.MACHINE_UP and previous.time<=end) {
+			if(previous.time>start) {
+				availability := availability + (end - previous.time);
+			} else {
+				availability := availability + (end - start);	
+			}
+		}
+		return availability;
+	}
+	
+	action totalAvailability() returns float {
+		return availabilityIn(self.start, self.end);
+	}
+	
+	action appendStatus(MachineStatus s) {
+		statusUpdates.append(s);
+	}
+
+}
+
+event AppendResult {
+	boolean reset;
+	
+	static action merge(AppendResult a, AppendResult b) returns AppendResult {
+		return AppendResult(a.reset or b.reset);
+	}
+}
+
+event ExpressionParser {
+	AST ast;
+
+	any value;
+	float lastReceived;
+	string error;
+	
+	static action parseText(string text) returns ExpressionParser {
+		ExpressionParser ec := new ExpressionParser;
+		try {
+			ec.ast := Parser.parseText(text);
+		} catch(Exception e) {
+			ec.error := e.toStringWithStackTrace();
+		}
+		return ec;
+	}
+
+	action evaluate() returns any {
+		Compiler compiler := new Compiler;
+		dictionary<string, any> context := {"value": value};
+		return compiler.compile(ast)(EvalContext(context));
+	}
+	
+	action clearInputValues() {
+		value := 0.0;
+	}
+	
+	action split(InputValue v, CurrentInterval currentInterval) returns sequence<InputValue> {
+		if(lastReceived=0.0) {
+			lastReceived := currentInterval.start;
+		}
+		sequence<Interval> intervals := currentInterval.intervalsTo(v.time);
+		if(intervals.size()=1) {
+			return [v.clone()];
+		}
+		Interval first := intervals[0];
+		Interval last := intervals[intervals.size()-1];
+		Interval int;
+		sequence<InputValue> result := new sequence<InputValue>;
+		for int in intervals {
+			InputValue splitV := v.clone();
+			float affectedTimeInInterval;
+			if(int=first) {
+				affectedTimeInInterval := currentInterval.availabilityIn(lastReceived, int.end);
+				splitV.time := int.end;
+			} else if(int=last) {
+				affectedTimeInInterval := currentInterval.availabilityIn(int.start, v.time);
+				splitV.time := v.time;
+			} else {
+				affectedTimeInInterval := currentInterval.availabilityIn(int.start, int.end);
+				splitV.time := int.end;	
+			}
+			float affectedTime := currentInterval.availabilityIn(lastReceived, v.time);
+			splitV.value := <float>v.value * _internal_weight(affectedTimeInInterval, affectedTime);
+			result.append(splitV);
+		}
+		return result;
+	}
+	
+	action append(InputValue v) {
+		lastReceived := v.time;
+		value := v.value;
+	}
+	
+	
+	action empty() returns any {
+		return new any;
+	}
+
+	/**************************************************************************************************************
+		Internal
+	**************************************************************************************************************/
+
+	action _internal_weight(float affectedTimeInInterval, float affectedTime) returns float {
+		if(affectedTime=0.0) {
+			return 0.0;
+		} else {
+			return affectedTimeInInterval / affectedTime;	
+		}
+	}
+
+}
+
+event StatePoint {
+	float time;
+	boolean state;
+}
+
+/**
+* It collects all machine status events and calculates time spent in particular state 
+* with taking "short shutdowns" into account.
+*/
+event StateTracker {
+	
+	sequence<StatePoint> statePoints;
+	float lastPointTime;
+	float lastMachineUpTime;
+	float shortShutdown;
+	boolean initialStateIsUp;
+	
+		
+	static action create(boolean initialState) returns StateTracker {
+		float lastPointTime := 0.0;
+		float lastMachineUp := 0.0;
+		float shortShutdown := 0.0;
+		return StateTracker(new sequence<StatePoint>, lastPointTime, lastMachineUp, shortShutdown, initialState);
+	}
+	
+	action addState(StatePoint statePoint) {
+		if (statePoint.time > lastPointTime) {
+	
+			if (statePoints.size() = 0 and initialStateIsUp) {
+				lastMachineUpTime := statePoint.time;
+			}
+			
+			statePoints.append(statePoint);
+			lastPointTime := statePoint.time;
+			
+			removeShutdown(statePoint);
+			
+			if (statePoint.state = true) {
+				lastMachineUpTime := statePoint.time;
+			}
+			
+		} else { // insert at correct place
+			//TODO: fix implemention for shutdowns.
+			integer idx := 0;
+			while (idx < statePoints.size()) {
+				if (statePoints[idx].time > statePoint.time) {
+					statePoints.insert(statePoint, idx);
+					break;
+				} else if (statePoints[idx].time = statePoint.time) {
+					statePoints[idx] := statePoint;
+					break;
+				}
+				idx := idx + 1;
+			}
+		}
+	}
+	
+	
+	action removeShutdown(StatePoint latestPoint) {
+		if (latestPoint.state = true and shortShutdown >= latestPoint.time - lastMachineUpTime) {
+			__removeLatestSatePoint();
+			while (statePoints.size() > 0) {
+				StatePoint statePoint := statePoints[statePoints.size() - 1];
+				if (statePoint.state = false) {
+					__removeLatestSatePoint();	 
+				} else {
+					break;
+				}
+			}			
+			statePoints.append(latestPoint);
+		}
+	}
+	
+	action __removeLatestSatePoint() {
+		statePoints.remove(statePoints.size()  - 1);
+	}
+	
+	/**
+	* Returns AvailibiltyLossTime or ActualProductionTime depending on <code>targetState</code>
+	* @param targetState - if true(MACHINE_UP) the ActualProductionTime will be returned, othwerwise AvailibiltyLossTime
+	*/
+	action timeInStateForInteval(boolean targetState, boolean currentState, Interval interval) returns float {
+		float actualProductionTime := actualProductionTimeForInterval(currentState, interval);
+		if (targetState = true) {
+			return actualProductionTime;	
+		}
+		return interval.duration() - actualProductionTime;
+	}
+	
+	/**
+	* Returns the  ActualProductionTime for the given interval.
+	*/
+	action actualProductionTimeForInterval(boolean currentState, Interval interval) returns float {
+		float productionTime := 0.0;
+		
+		if (interval.start >= lastPointTime) {
+			if (currentState) { return interval.duration(); }
+			return 0.0;
+		}
+		
+		Interval remainedInterval := interval;
+		integer idx := statePoints.size() - 1;
+		StatePoint statePoint;
+		while (idx >= 0) {
+			statePoint := statePoints[idx];
+			
+			if (remainedInterval.isIn(statePoint.time)) {
+				if (statePoint.state) {
+					productionTime := productionTime + remainedInterval.durationFrom(statePoint.time);
+				}
+				remainedInterval := Interval(remainedInterval.start, statePoint.time);
+			} else if (remainedInterval.start > statePoint.time) {
+				if (statePoint.state) {
+					productionTime := productionTime + remainedInterval.duration();
+				}
+				return productionTime;
+			}
+			idx := idx - 1;
+		}
+		
+		if (initialStateIsUp) {
+			productionTime := productionTime + remainedInterval.duration();
+		}
+		
+		return productionTime;
+	}
+	
+	action cleanup(float upToTime) {
+		StatePoint statePoint;
+		while (statePoints.size() > 0) {
+			statePoint := statePoints[0];
+			if (statePoint.time < upToTime) {
+				statePoints.remove(0);
+				initialStateIsUp := statePoint.state;
+			} else {
+				break;
+			}
+		}
+	}
+		
+}
+
+/**
+ * This is a wrapper around the expression parser that keeps track of the time spent in
+ * states resulting from the evaluation of the expression.
+ *
+ * This will typically be used for expressions returning true/false to count the time
+ * based on machine status or quality status but it can be used for float or string values
+ * as well.
+ */
+event TimeInStateExpressionParser {
+	
+	ExpressionParser ep;
+	StateTracker stateTracker;
+	boolean state;
+	CurrentInterval currentInterval;
+	
+	static action parseText(string text, float now, float intervalLength) returns TimeInStateExpressionParser {
+		// TODO: The assumption that initialState is true is incorrect, but we have to live with it for now.
+		boolean initialState := true;
+		return TimeInStateExpressionParser(ExpressionParser.parseText(text),
+		                                   StateTracker.create(initialState),
+		                                   initialState,
+		                                   CurrentInterval.build(intervalLength, now));
+	}
+	
+	action evaluateWith(InputValue v) returns boolean {
+		ep.append(v);
+		float time := v.time;
+		boolean newState := <boolean> ep.evaluate();
+		stateTracker.addState(StatePoint(time, newState));
+		boolean statusChanged := state != newState;
+		state := newState;
+		return statusChanged;
+	}
+
+	action cleanup(float upToTime) {
+		stateTracker.cleanup(upToTime);
+	}
+
+	action timeInStateForInterval(boolean targetState, Interval interval) returns float {
+		return stateTracker.timeInStateForInteval(targetState, state, interval);
+	}
+	
+	action intervalName() returns string {
+		return currentInterval.name;
+	}
+
+}
+
+/**
+ * This is a wrapper around the expression parser that keeps track of previous states.
+ * Whenever the contained expression is evaluated, the evaluation result can be combined with the 
+ * previous state into a new state. The state can be anything though typically it will be of the 
+ * same type as the evaluation result (float, boolean, string). How the combination takes place
+ * is controlled via a the action in the combinator action variable.
+ *
+ * A typical example is to sum up all successful evaluations in a given interval. For this purpose
+ * the Util.sum action can be used. 
+ */
+event StatefulExpressionParser {
+	
+	ExpressionParser ep;
+	CurrentInterval currentInterval;
+	action <any,any> returns any merger;
+	action <any,any> returns any intermediateCalculator;
+	any value;
+	any startValue;
+	any previousValue;
+	
+	static action parseText(string text, action <any,any> returns any merger, action <any,any> returns any intermediateCalculator, any startValue, float now, float intervalLength) returns StatefulExpressionParser {
+		return StatefulExpressionParser(ExpressionParser.parseText(text),
+		                                CurrentInterval.build(intervalLength, now),
+		                                merger, 
+		                                intermediateCalculator, 
+		                                startValue, 
+		                                startValue, 
+		                                startValue);
+	}
+	
+	action hasError() returns boolean {
+		return ep.error != "";
+	}
+	
+	action evaluateWith(InputValue v) returns any {
+		ep.append(v);
+		any intermediate := new any;
+		intermediate := ep.evaluate();
+		value := merger(value, intermediate);
+		return intermediate;	
+	}
+			
+	action retrieveAndReset() returns any {
+		any v := value;
+		value := startValue;
+		previousValue := startValue;
+		if(v.empty()) {
+			return startValue;
+		} else {
+			return v;			
+		}
+	}
+
+	action intervalName() returns string {
+		return currentInterval.name;
+	}
+	
+}
+
+event AmountByQualityState {
+	string initialState;
+	string targetState;
+	boolean isStatic;
+	dictionary<float,float> amountList;
+	dictionary<float,boolean> states;
+	float time;
+	
+	static action build(string initialState, string targetState, boolean isStatic) returns AmountByQualityState {
+		return AmountByQualityState(initialState, targetState, isStatic, new dictionary<float,float>, new dictionary<float,boolean>,0.0);
+	}
+	
+	static action fixed(string targetState, boolean staticStatus, boolean isStatic) returns AmountByQualityState {
+		if(targetState=OEE.QUALITY_OK) {
+			if(staticStatus) {
+				return AmountByQualityState.build(OEE.QUALITY_OK, OEE.QUALITY_OK, isStatic);	
+			} else {
+				return AmountByQualityState.build(OEE.QUALITY_BAD, OEE.QUALITY_OK, isStatic);
+			}
+		} else {
+			if(staticStatus) {
+				return AmountByQualityState.build(OEE.QUALITY_BAD, OEE.QUALITY_BAD, isStatic);	
+			} else {
+				return AmountByQualityState.build(OEE.QUALITY_OK, OEE.QUALITY_BAD, isStatic);
+			}							
+		}
+
+	}
+
+	
+	action add(InternalAmount ia) {
+		if(not amountList.hasKey(ia.timestamp)) {
+			amountList.add(ia.timestamp, ia.value);			
+		}
+	}
+	
+	action recordStatus(QualityStatus s) {
+		if(s.type=OEE.QUALITY_OK) {
+			states.add(s.time, true);
+			time := s.time;
+		} else if (s.type=OEE.QUALITY_BAD) {
+			states.add(s.time, false);
+			time := s.time;
+		}
+	}
+	
+	action amountReceivedAfter(float timestamp) returns boolean {
+		float amountTs;
+		for amountTs in amountList.keys() {
+			if(amountTs>=timestamp) {
+				return true;
+			}
+		}
+		return false;		
+	}
+	
+	action statusAt(float timestamp)  returns string {
+		float time;
+		string state := initialState;
+		for time in states.keys() {
+			if(time>timestamp) {
+				return state;
+			} else if (time=timestamp) {
+				if(states[time]) {
+					state := OEE.QUALITY_OK;
+				} else {
+					state := OEE.QUALITY_BAD;
+				}
+				return state;
+			} else {
+				if(states[time]) {
+					state := OEE.QUALITY_OK;
+				} else {
+					state := OEE.QUALITY_BAD;
+				}				
+			}
+		}
+		return initialState;
+	}
+
+	action retrieveBy(Interval interval) returns float {
+		float result := 0.0;
+		float amountTs;
+		for amountTs in amountList.keys() {
+			if(interval.beforeOrAtEnd(amountTs)) {
+				if(statusAt(amountTs)=targetState) {
+					result := result + amountList[amountTs];
+				}
+				amountList.remove(amountTs);
+			} 
+		}
+		float stateTs;
+		float previousTs := 0.0;
+		for stateTs in states.keys() {
+			if(interval.isIn(stateTs) and states.hasKey(previousTs)) {
+				states.remove(previousTs);
+			}
+			previousTs := stateTs;
+		}
+		return result;
+	}
+}
+
+

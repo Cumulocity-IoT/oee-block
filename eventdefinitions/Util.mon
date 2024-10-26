@@ -1,0 +1,146 @@
+package apamax.analyticsbuilder.oee;
+
+event Util {
+	
+	static action asAnyDictionary(any value) returns optional<dictionary<string,any> > {
+		switch(value as f) {
+			case dictionary<any,any>:
+				{	
+				return optional<dictionary<string,any> >(Util.anyanyToStringAnyDictionary(f));
+				}
+			case dictionary<string,any>:
+				{
+				return optional<dictionary<string,any> >(f);
+				}
+			case dictionary<string,float>:
+				{
+				return optional<dictionary<string,any> >(Util.floatToAnyDictionary(f));
+				}
+			case dictionary<string,decimal>:
+				{
+				return optional<dictionary<string,any> >(Util.decimalToAnyDictionary(f));
+				}
+			case dictionary<string,integer>:
+				{
+				return optional<dictionary<string,any> >(Util.integerToAnyDictionary(f));
+				}
+			case dictionary<string,string>:
+				{
+				return optional<dictionary<string,any> >(Util.stringToAnyDictionary(f));
+				}
+			default:
+				{
+				return new optional<dictionary<string,any> >;
+				}
+		}
+	}
+
+	static action anyanyToStringAnyDictionary(dictionary<any,any> floatDictionary) returns dictionary<string,any> {
+		dictionary<string,any> anyDictionary := new dictionary<string,any>;
+		any k;
+		for k in floatDictionary.keys() {
+			anyDictionary[<string>k] := floatDictionary[k];
+		}
+		return anyDictionary;
+	}
+
+	
+	static action floatToAnyDictionary(dictionary<string,float> floatDictionary) returns dictionary<string,any> {
+		dictionary<string,any> anyDictionary := new dictionary<string,any>;
+		string k;
+		for k in floatDictionary.keys() {
+			anyDictionary[k] := floatDictionary[k];
+		}
+		return anyDictionary;
+	}
+	
+	static action integerToAnyDictionary(dictionary<string,integer> integerDictionary) returns dictionary<string,any> {
+		dictionary<string,any> anyDictionary := new dictionary<string,any>;
+		string k;
+		for k in integerDictionary.keys() {
+			anyDictionary[k] := integerDictionary[k];
+		}
+		return anyDictionary;
+	}
+	
+	static action stringToAnyDictionary(dictionary<string,string> stringDictionary) returns dictionary<string,any> {
+		dictionary<string,any> anyDictionary := new dictionary<string,any>;
+		string k;
+		for k in stringDictionary.keys() {
+			anyDictionary[k] := stringDictionary[k];
+		}
+		return anyDictionary;
+	}
+	
+	static action decimalToAnyDictionary(dictionary<string,decimal> decimalDictionary) returns dictionary<string,any> {
+		dictionary<string,any> anyDictionary := new dictionary<string,any>;
+		string k;
+		for k in decimalDictionary.keys() {
+			anyDictionary[k] := decimalDictionary[k];
+		}
+		return anyDictionary;
+	}
+	
+	static action sum(any before, any v) returns any {
+		if(<float>v = float.INFINITY) {
+			return before;
+		} else {
+			return <float> before+<float>v;
+		}
+	}
+	
+	static action diff(any a, any b) returns any {
+		optional<float> o1 := <optional<float> > a;
+		optional<float> o2 := <optional<float> > b;
+		ifpresent o1,o2 {
+			return o1-o2;
+		}
+		return new any;
+	}
+
+	static action anyToFloat(any a) returns float {
+		switch(a as f) {
+			case float:
+			{
+				return f;
+			}
+			default:
+			{
+				return 0.0;
+			}
+		}
+	}
+	
+	static action latest(any before, any v) returns any {
+		return v;
+	}
+	
+	static action determineLinebreak(string s) returns string {
+		if(s.find("\r\n") != -1) {
+			return "\r\n";
+		} else {
+			return "\n";
+		}
+	}
+	
+	constant string NUMBER := "-0123456789.";
+
+	/**
+	 * Returns -1 if string cannot be parsed into a number
+	 */
+	static action parseSafely(string text) returns decimal {
+		string trimmed := text.ltrim().rtrim();
+		if(trimmed.length()=0) {
+			return -1.0d;
+		} else {
+			integer i := 0;
+			while(i < trimmed.length()) {
+				if(NUMBER.find(trimmed.substring(i,i+1)) = -1) {
+					return -1.0d;
+				}
+				i := i + 1;
+			}
+		}
+		return decimal.parse(trimmed);
+	}
+}

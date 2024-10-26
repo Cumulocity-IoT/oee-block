@@ -1,0 +1,1042 @@
+/*
+ * Copyright (c) 2018-2019 Software AG, Darmstadt, Germany and/or its licensors
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except 
+ * in compliance with the License. You may obtain a copy of the License at 
+ * http://www.apache.org/licenses/LICENSE-2.0 Unless required by applicable law or agreed to in writing, 
+ * software distributed under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES 
+ * OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language 
+ * governing permissions and limitations under the License.
+ */
+
+package apamax.analyticsbuilder.oee;
+using com.apama.exceptions.Exception;
+//using apama.analyticskit.L10N;
+
+// EPL implementation of a small expression parser.
+//
+// The language for this parser is EPL, with the following differences:
+// * Restricted to expressions
+// * Only arithmetic and comparison operators (see Lexer.OPERATORS)
+// * Only support float type (or boolean for comparisons)
+// * No support for closures
+// * No static method calls
+// * No constructor calls
+// * Only support float methods that take all float arguments and return float type
+// * Numeric literals can be in either integer or float form.
+//
+// Example usage:
+//		string expr := "(input1 -32) * 5/9"
+//		AST ast := Parser.parseText(expr);
+//		Compiler compiler := new Compiler;
+//		action<EvalContext> returns any evaluator := compiler.compile(ast);
+//		string type := compiler.type(ast);
+//		log evaluator(EvalContext({"input1":32.54})).valueToString();
+
+
+/** Represents a lexical token.
+ *
+ * A lexical token, which is one of an entire string literal (not used), identifier (e.g. 'input1'),
+ * number (possibly excluding leading '-'), operator, or a special type denoting end of 'file'
+ * (end of text).  Whitespace is excluded by the parser.
+ */
+event Token {
+	/** Token type.
+	 * One of the constants on this event.
+	 */
+	integer type;
+	/**
+	 * Textual contents of the token.
+	 */
+	string txt;
+	constant integer IDENTIFIER := 2;
+	constant integer NUMBER := 3;
+	constant integer OPERATOR := 4;
+	constant integer BOOLEAN := 5;
+	constant integer STRING := 6;
+	constant integer EOF := -1;
+	
+	action prettyPrint() returns any {
+		return txt;
+//		if type = EOF { return L10N.getLocalizedSubMsg_basic("fwk_parser_token_end_of_expr"); }
+//		if type = IDENTIFIER { return L10N.getLocalizedSubMsg("fwk_parser_token_identifier", [<any>txt]); }
+//		if type = NUMBER { return L10N.getLocalizedSubMsg("fwk_parser_token_number", [<any>txt]); }
+//		if type = OPERATOR { return L10N.getLocalizedSubMsg("fwk_parser_token_operator", [<any>txt]); }
+//		return L10N.getLocalizedSubMsg("fwk_parser_token_other", [<any>txt]);
+	}
+}
+
+/**
+ * Lexer. Splits text into tokens.
+ *
+ * Uses a set of heuristics to identify where tokens begin and end.
+ */
+event Lexer {
+	constant string ID_START := "_abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ$";
+	constant string ID_REST := "_abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ$0123456789";
+	constant string OPERATORS := "- + * / . ( , ) < > = != >= <=";
+	constant string WHITESPACE := " \t\n\r";
+	constant string NUMBER := "-0123456789.";
+	constant string NUMERIC := "0123456789";
+	/** Source text.
+	 */
+	string txt;
+	/** Current offset */
+	integer i;
+	/** Current element we are parsing.
+	 *  Used for erorr reporting.
+	 */
+	string where;
+	/**
+	 * Report an error.
+	 *
+	 * Based on desc description parameter and where member
+	 */
+	action errorLocalized_basic(string msgId) returns Exception { //NON-L10N-FRAMEWORK
+		return Exception(msgId, "Exception");
+//		return L10N.getLocalizedException("fwk_parser_lexer_error", 
+//                      [L10N.getLocalizedSubMsg_basic(msgId), L10N.getLocalizedSubMsg_basic(where), txt]); //NON-L10N-FRAMEWORK
+	}
+
+	action errorLocalized(string msgId, sequence<any> params) returns Exception { //NON-L10N-FRAMEWORK
+		return Exception(msgId, "Exception");
+//		return L10N.getLocalizedException("fwk_parser_lexer_error", 
+//                      [L10N.getLocalizedSubMsg(msgId, params), L10N.getLocalizedSubMsg_basic(where), txt]); //NON-L10N-FRAMEWORK
+	}
+	/** Consume a single character
+	 */
+	action getchar() returns string {
+		if(i >= txt.length()) {
+			throw errorLocalized_basic("fwk_parser_unexpected_end_of_input");
+		}
+		i:=i+1;
+		return txt.substring(i-1, i);
+	}
+	/** Peek at next character
+	 * @returns single character or "" if at end of input text.
+	 */
+	action nextchar() returns string {
+		if(i >= txt.length()) {
+			return "";
+		}
+		return txt.substring(i, i+1);
+	}
+	/** Does the next character match any in supplied range. */
+	action nextMatches(string range) returns boolean {
+		string n:=nextchar();
+		if n = "" { return false; }
+		return range.find(n) >= 0;
+	}
+	/** Check not at end of stream */
+	action hasMore() returns boolean {
+		return i < txt.length();
+	}
+	/** Lexer interface.
+	 * Entry point for lexer.
+	 * @param txt the input text to parse.
+	 * @returns a sequence of Tokens.
+	 */
+	static action lex(string txt) returns sequence<Token> {
+		Lexer lexer := new Lexer;
+		lexer.txt := txt;
+		while(lexer.hasMore()) {
+			lexer.ret.appendSequence(lexer.getToken());
+		}
+		return lexer.ret;
+	}
+	/**
+	 * Lexer output.
+	 *
+	 * Output tokens of the lexer.
+	 */
+	sequence<Token> ret;
+	/**
+	 * Identify and return next token.
+	 *
+	 * @return sequence of 0 or 1 Tokens.
+	 */
+	action getToken() returns sequence<Token> {
+		where := "fwk_parser_where_unknown";
+		string c := getchar();
+		if WHITESPACE.find(c) >= 0 {
+			// ignore whitespace
+			return new sequence<Token>;
+		}
+		// operators, including '.'  - but exclude if it's .<numeral> - that's a number.
+		if OPERATORS.find(c) >=0 and (c != "." or (nextchar() = "" or NUMERIC.find(nextchar()) < 0))  {
+			sequence<string> ops := " ".split(OPERATORS);
+			string c2 := c+nextchar();
+			if c2 = "/*" {// comment
+				where := "fwk_parser_where_comment";
+				boolean endOfComment := false;
+				string c:= getchar();
+				while(true) {
+					c := getchar();
+					if c = "*" and nextchar() = "/" {
+						c := getchar();
+						return new sequence<Token>; // ignore comment
+					}
+				}
+			}
+			if c != c2 and ops.indexOf(c2) != -1 { // 2-character operator
+				c:=c+getchar();
+			}
+			if ops.indexOf(c) = -1 {
+				throw errorLocalized("fwk_parser_invalid_operator", [<any> c]);
+			}
+			return [Token(Token.OPERATOR, c)];
+		}
+		// identifier:
+		if ID_START.find(c) >= 0 {
+			where := "fwk_parser_where_identifier";
+			Token t:=Token(Token.IDENTIFIER, c);
+			while(nextMatches(ID_REST)) {
+				t.txt := t.txt + getchar();
+			}
+			if ["true", "false"].indexOf(t.txt) != -1 {
+				where := "fwk_parser_where_boolean";
+				t.type := Token.BOOLEAN;
+			}
+			if ["and", "or", "not", "xor"].indexOf(t.txt) != -1 {
+				where := "fwk_parser_where_operator";
+				t.type := Token.OPERATOR;
+			}
+			return [t];
+		}
+		// number:
+		if NUMBER.find(c) >=0 {
+			string exp := "";
+			// decimal, starting with '.' - e.g. '.01'
+			if c = "." {
+				string dec := matchInt();
+				exp := tryMatchExp();
+				return [Token(Token.NUMBER, "0."+dec+exp)];
+			} else {
+				string int := matchInt();
+				string dec := "";
+				integer dot := i; // a dot may be part of a float (i.e. a decimal point), or it could be a member lookup (i.e. method call).
+				if nextchar() = "." {
+					string dot := getchar();
+					dec := matchInt();
+				}
+				exp := tryMatchExp();
+				if dec = "" and exp = "" and nextchar() != "" and ID_START.find(nextchar()) >= 0 {
+					// we have <number>.<identifier> - the dot is not part of the number, so rewind back to the dot:
+					i := dot;
+				}
+				return [Token(Token.NUMBER, c+int+"."+dec+exp)];
+			}
+		}
+		
+		if c = "\"" {
+			where := "fwk_parser_where_string";
+			Token t:=Token(Token.STRING, "");
+			
+			while nextchar() != "\"" {
+				c := getchar();
+				if c = "\\" {
+					c := getchar();
+					if ["\"", "\\", "n", "t", "r"].indexOf(c) != -1 {
+						string s := c;
+						if c = "n" {
+							s := "\n";
+						} else if c = "t" {
+							s := "\t";
+						} else if c = "r" {
+							s := "\r";
+						}
+						t.txt := t.txt + s;
+					} else {
+						throw errorLocalized("fwk_parser_invalid_escape", [<any>c]);
+					}
+				} else {
+					t.txt := t.txt + c;
+				}
+			}
+			c := getchar(); // consume closing quote
+			return [t];
+		}
+		
+		where := "fwk_parser_where_parsing";
+		throw errorLocalized("fwk_parser_unrecognised_char", [<any>c]);
+	}
+
+	/**
+	 * Consume an integer
+	 *
+	 * @param allowNegative whether a minus sign is permitted.
+	 */
+	action matchInt() returns string {
+		string r:="";
+		while(nextMatches(NUMERIC)) {
+			r:=r+getchar();
+		}
+		return r;
+	}
+	/**
+	 * Attempt to match an exponent ('e' followed integer)
+	 */
+	action tryMatchExp() returns string {
+		integer idx := i;
+		string r:="";
+		if nextchar() = "e" or nextchar() = "E" {
+			r:="e";
+			string e:= getchar();
+			if nextchar() = "+" or nextchar() = "-" {
+				r:=r+getchar();
+			}
+			string exp := matchInt();
+			if exp = "" {
+				i := idx;
+				return "";
+			}
+			return r+exp;
+		}
+		i:=idx;
+		return "";
+	}
+
+}
+
+/**
+ * An element in an Abstract Syntax Tree (AST).
+ *
+ * Result of parser. Type can include token types.
+ * @see Token
+ */
+event AST {
+	constant integer CALL := 10;
+	constant integer UNARY_OP := 11;
+	/** Token type.
+	 *
+	 * @see Token
+	 * May be one of the constants on this type or Token.
+	 */
+	integer tokenType;
+	/**
+	 * Text of the operator.
+	 */
+	string op;
+	/**
+	 * Children.
+	 *
+	 * List of child nodes.  May be empty.
+	 */
+	sequence<AST> children;
+	/** Build AST object from a token.
+	 */
+	static action fromToken(Token t) returns AST {
+		AST ast := new AST;
+		ast.tokenType := t.type;
+		ast.op := t.txt;
+		return ast;
+	}
+}
+
+/**
+ * Parser - parses text into a tree of AST nodes.
+ *
+ */
+event Parser {
+	/** Input tokens.
+	 */
+	sequence<Token> tokens;
+	string txt;
+	/** Convert a textual expression into an AST tree.
+	 * @param txt Textual form of expression.
+	 * @returns root node of tree of ASTs
+	 * throws on parser error.
+	 */
+	static action parseText(string txt) returns AST {
+		Parser p := new Parser;
+		p.init(txt);
+		p.tokens := Lexer.lex(txt);
+		log "Parsing "+p.tokens.toString() at DEBUG;
+		p.step();
+		AST ast := p.parseExpression();
+		log "AST output : "+ast.toString() at DEBUG;
+		// if we have not consumed the input, we have an error:
+		if p.current.type != Token.EOF {
+			throw p.errorLocalized_basic("fwk_parser_parser_end_of_expr");
+		}
+		return ast;
+	}
+
+	/**
+	 * Throw an exception.
+	 *
+	 * Uses the location where and the current location in the token list.
+	 */
+	action errorLocalized_basic(string what) returns Exception { //NON-L10N-FRAMEWORK
+		return Exception(what, "Exception");
+//		return L10N.getLocalizedException("fwk_parser_parser_error", 
+//                          [current.prettyPrint(), L10N.getLocalizedSubMsg_basic(what), txt, tokens.toString()]); //NON-L10N-FRAMEWORK
+	}
+
+	/**
+	 * Parse an expression.
+	 *
+	 * Consume an expression from the tokens.  This handles unary expressions combined with binary operators.
+	 */
+	action parseExpression() returns AST {
+		return parseBinOpRHS(0, parseUnary());
+	}
+	/**
+	 * Parse a unary expression.
+	 *
+	 * A unary expression is a plus, minus or not sign.
+	 */
+	action parseUnary() returns AST {
+		if current.type = Token.OPERATOR and ["+", "-", "not"].indexOf(current.txt) >= 0 {
+			string op := current.txt;
+			step();
+			return AST(AST.UNARY_OP, op, [parseUnary()]);
+		}
+
+		return parsePostfix();
+	}
+
+	/**
+	 * Parse a postfix expression.
+	 *
+	 * The only postfix expressions supported in this language are method calls.
+	 */
+	action parsePostfix() returns AST {
+		AST ast := parsePrimaryTerminal();
+		while current.type = Token.OPERATOR and current.txt = "." {
+			step();
+			if current.type = Token.IDENTIFIER {
+				Token id := current;
+				step();
+				if current.type = Token.OPERATOR and current.txt = "(" {
+					// call:
+					step(); // consume '('
+					AST evalOn := ast;
+					ast := new AST;
+					ast.tokenType := AST.CALL;
+					ast.op := id.txt;
+					ast.children.append(evalOn);
+					boolean first := true;
+					while(true) {
+						if current.type = Token.OPERATOR and current.txt = ")" {
+							step(); // consume ')'
+							break;
+						}
+						if not first {
+							if not (current.type = Token.OPERATOR and current.txt = ",") {
+								throw errorLocalized_basic("fwk_parser_parser_comma");
+							}
+							step();
+						}
+						first := false;
+						ast.children.append(parseExpression());
+					}
+				} else {
+					throw errorLocalized_basic("fwk_parser_parser_field_lookup");
+				}
+			} else {
+				throw errorLocalized_basic("fwk_parser_parser_call");
+			}
+		}
+		return ast;
+	}
+
+	/**
+	 * Parse a primary terminal.
+	 *
+	 * A primary terminal is a numeric literal, an identifier or a parenthesised sub-expression.
+	 * For parentheses, is non-terminal, and calls parseParen (whcih calls parseExpression)
+	 */
+	action parsePrimaryTerminal() returns AST {
+
+		if [Token.IDENTIFIER, Token.NUMBER, Token.STRING, Token.BOOLEAN].indexOf(current.type) >= 0 {
+			Token t:=current;
+			step();
+			return AST.fromToken(t);
+		}
+		if current.type = Token.OPERATOR and current.txt = "(" {
+			return parseParen();
+		}
+		throw errorLocalized_basic("fwk_parser_parser_expression");
+	}
+	/**
+	 * Parse a parenthesised sub-expression.
+	 *
+	 * This will recurse to parseExpression.
+	 */
+	action parseParen() returns AST {
+		step();
+		AST ast := parseExpression();
+		if not (current.type = Token.OPERATOR and current.txt = ")") {
+			throw errorLocalized_basic("fwk_parser_parser_close_bracket");
+		}
+		step();
+		return ast;
+	}
+	/**
+	 * Mapping of precedence of operators.
+	 *
+	 * Higher value indicates tighter binding and higher precedence.
+	 */
+	dictionary<string, integer> precedence;
+	action init(string t) {
+		txt := t;
+		precedence := {
+			"or": 10,
+			"xor": 20,
+			"and": 30,
+			"<":50,
+			">":50,
+			">=":50,
+			"<=":50,
+			"=":50,
+			"!=":50,
+			"+":60,
+			"-":60,
+			"*":70,
+			"/":70
+		};
+	}
+	/**
+	 * Lookup precedence of token.
+	 *
+	 * Looks up in precedence map.
+	 * @return -1 if not found, else precedence value.
+	 */
+	action getTokenPrecedence() returns integer {
+		if current.type = Token.OPERATOR and precedence.hasKey(current.txt) {
+			return precedence[current.txt];
+		}
+		return -1;
+	}
+	/**
+	 * Parse binary operator.
+	 *
+	 * Parse a right hand side of a binary expression.
+	 *  Only parses tokens of equal or higher precedence that
+	 * exprPrecedence. (e.g. 1*2 + 3 is all handled in one call,
+	 * building AST(*, 1,2) and then AST(+,AST(*,1,2),3) .)
+	 *
+	 * On finding an operator followed by a higher precedence
+	 * operator, recurses - so 1 + 2 * 3 will recurse to generate
+	 * AST(*,2,3) and then build AST(+,1,AST(*,2,3))
+	 *
+	 */
+	action parseBinOpRHS(integer exprPrecedence, AST lhs) returns AST {
+		while(true) {
+			integer tokenPrecedence := getTokenPrecedence();
+			// limit high-precedence sub-tree case (or end of binary operator sequence)
+			if tokenPrecedence < exprPrecedence {
+				return lhs;
+			}
+
+			Token thisOp := current;
+			step();
+			AST rhs := parseUnary();
+			integer nextPrecedence := getTokenPrecedence();
+
+			// if we have a low precedence followed by high precedence operator, we recurse to consume
+			// only the high-precedence sub-tree:
+			if (tokenPrecedence < nextPrecedence) {
+				rhs := parseBinOpRHS(tokenPrecedence+1, rhs);
+			}
+
+			AST newRoot := AST.fromToken(thisOp);
+			newRoot.children.append(lhs);
+			newRoot.children.append(rhs);
+			lhs := newRoot;
+		}
+		return new AST;
+	}
+	/** The current token.
+	 */
+	Token current;
+	/**
+	 * index into tokens.
+	 */
+	integer i;
+	/**
+	 * Step to next token.
+	 *
+	 * Throw if at end.
+	 */
+	action step() {
+		if i < tokens.size() {
+			current := tokens[i];
+			i:=i+1;
+			return;
+		}
+		current := Token(Token.EOF, "");
+	}
+
+}
+
+
+/**
+ * Evaluation context.
+ *
+ * This holds the 'variables' avaible to an evaluation of a 'compiled' expression.
+ */
+event EvalContext {
+	/** Variable values.
+	 */
+	dictionary<string, any> values;
+}
+
+/**
+ * Evaluation of a numeric literal.
+ */
+event Number {
+	float value;
+	/** Evaluate literal.
+	 *
+	 * Used by Compiler as a closure which returns value.
+	 * @see Compiler
+	 */
+	action val(EvalContext ctx) returns any {
+		return value;
+	}
+}
+
+/**
+* Evaluation of a string literal.
+*/
+event String {
+	string value;
+	/** Evaluate literal.
+	 *
+	 * Used by Compiler as a closure which returns value.
+	 * @see Compiler
+	 */
+	action val(EvalContext ctx) returns any {
+		return value;
+	}
+}
+
+/**
+* Evaluation of a boolean literal.
+*/
+event Boolean {
+	boolean value;
+	/** Evaluate literal.
+	 *
+	 * Used by Compiler as a closure which returns value.
+	 * @see Compiler
+	 */
+	action val(EvalContext ctx) returns any {
+		return value;
+	}
+}
+
+/**
+ * Evaluation of an unary operator.
+ */
+event UnaryOp {
+	action<EvalContext> returns any child;
+	/** Evaluate negation.
+	 *
+	 * Used by Compiler as a closure which returns negation of evaluating child.
+	 * @see Compiler
+	 */
+	action negation(EvalContext ctx) returns any {
+		return - (<float> child(ctx));
+	}
+	/** Evaluate unary plus.
+	 *
+	 * Used by Compiler as a closure which returns plus of evaluating child.
+	 * @see Compiler
+	 */
+	action plus(EvalContext ctx) returns any {
+		return (<float> child(ctx));
+	}
+	/** Evaluate not.
+	 *
+	 * Used by Compiler as a closure which returns not of evaluating child.
+	 * @see Compiler
+	 */
+	action not_op(EvalContext ctx) returns any {
+		return not (<boolean> child(ctx));
+	}
+}
+
+/**
+ * Evaluation of a variable.
+ */
+event Variable {
+	string name;
+	/** Evaluate variable.
+	 *
+	 * Used by Compiler as a closure which returns the variable named by name.
+	 * @see Compiler
+	 */
+	action val(EvalContext ctx) returns any {
+		switch(ctx.values[name] as val) {
+			case decimal:
+			{
+				return val.toFloat();
+			}
+			case integer:
+			{
+				return val.toFloat();
+			}
+			default:
+			{
+				return val;
+			}
+		}
+	}
+}
+
+/**
+ * Evaluation of a call.
+ *
+ * e.g. for 3.14.pow(2.0), evalOn yields 3.14;
+ * methodName is pow
+ * args is [(yields 2.0)]
+ */
+event Call {
+	/** Evaluates the expression we are calling on */
+	action<EvalContext > returns any evalOn;
+	/** Name of the method we are calling. */
+	string methodName;
+	/** Compiled arguments */
+	sequence<action<EvalContext > returns any> args;
+	/** Evaluate the call.
+	 *
+	 * Used by Compiler to evaluate calling the method named in methodName on the result of evalOn, using the
+	 * evaluation of the arguments in args.
+	 * @see Compiler
+	 */
+	action call(EvalContext ctx) returns any {
+		any v:=evalOn(ctx);
+		action<sequence<any> > returns any act :=v.getAction(methodName).getGenericAction();
+		sequence<any> callArgs := [];
+		action<EvalContext> returns any arg;
+		for arg in args {
+			callArgs.append(arg(ctx));
+		}
+		switch(act(callArgs) as val) {
+			case decimal:
+			{
+				return val.toFloat();
+			}
+			case integer: 
+			{
+				return val.toFloat();
+			}
+			default:
+			{
+				return val;
+			}
+		}
+	}
+}
+
+/** Evaluation of a binary operator.
+ */
+event BinOp {
+	/** Left hand side. */
+	action<EvalContext> returns any left;
+	/** Right hand side. */
+	action<EvalContext> returns any right;
+	/** Addition */
+	action add(EvalContext ctx) returns any {
+		switch (left(ctx) as lhs) {
+			case string: {
+				return lhs + <string>(right(ctx));
+			} 
+			case float: {
+				return lhs + <float>(right(ctx));
+			}
+		}
+	}
+	
+	/** Subtraction */
+	action sub(EvalContext ctx) returns any {
+		return <float>(left(ctx)) - <float>(right(ctx));
+	}
+	/** Multiplication */
+	action mul(EvalContext ctx) returns any {
+		return <float>(left(ctx)) * <float>(right(ctx));
+	}
+	/** Division */
+	action div(EvalContext ctx) returns any {
+		return <float>(left(ctx)) / <float>(right(ctx));
+	}
+	/** Less than */
+	action lt(EvalContext ctx) returns any {
+		switch (left(ctx) as lhs) {
+			case string: {
+				return lhs < <string>(right(ctx));
+			} 
+			case float: {
+				return lhs < <float>(right(ctx));
+			}
+		}
+	}
+	/** Greater than */
+	action gt(EvalContext ctx) returns any {
+		switch (left(ctx) as lhs) {
+			case string: {
+				return lhs > <string>(right(ctx));
+			} 
+			case float: {
+				return lhs > <float>(right(ctx));
+			}
+		}
+	}
+	/** Less than or equal */
+	action lte(EvalContext ctx) returns any {
+		switch (left(ctx) as lhs) {
+			case string: {
+				return lhs <= <string>(right(ctx));
+			} 
+			case float: {
+				return lhs <= <float>(right(ctx));
+			}
+		}
+	}
+	/** Greater than or equal */
+	action gte(EvalContext ctx) returns any {
+		switch (left(ctx) as lhs) {
+			case string: {
+				return lhs >= <string>(right(ctx));
+			} 
+			case float: {
+				return lhs >= <float>(right(ctx));
+			}
+		}
+	}
+	/** Equality */
+	action eq(EvalContext ctx) returns any {
+		switch (left(ctx) as lhs) {
+			case string: {
+				return lhs = <string>(right(ctx));
+			} 
+			case float: {
+				return lhs = <float>(right(ctx));
+			}
+			case boolean: {
+				return lhs = <boolean>(right(ctx));
+			}
+		}
+	}
+	/** Non-equality */
+	action neq(EvalContext ctx) returns any {
+		switch (left(ctx) as lhs) {
+			case string: {
+				any rhs := right(ctx);
+				if(rhs.empty()) {
+					return true;
+				}
+				return lhs != <string>(rhs);
+			} 
+			case float: {
+				any rhs := right(ctx);
+				if(rhs.empty()) {
+					return true;
+				}
+				return lhs != <float>(rhs);
+			}
+			case boolean: {
+				any rhs := right(ctx);
+				if(rhs.empty()) {
+					return true;
+				}
+				return lhs != <boolean>(rhs);
+			}
+		}
+	}
+	/** AND operator. */
+	action op_and(EvalContext ctx) returns any {
+		return <boolean>(left(ctx)) and <boolean>(right(ctx));
+	}
+	/** OR operator. */
+	action op_or(EvalContext ctx) returns any {
+		return <boolean>(left(ctx)) or <boolean>(right(ctx));
+	}
+	/** XOR operator. */
+	action op_xor(EvalContext ctx) returns any {
+		return <boolean>(left(ctx)) xor <boolean>(right(ctx));
+	}
+}
+
+/** Compiler.
+ *
+ * Builds a (closure based) action variable from a an AST.
+ * Can also predict the type returned by an AST.
+ */
+event Compiler {
+	/** 
+	 * Set of available symbols and their type. Unconnected input has empty type.
+	 */
+	dictionary<string,string> symbols;
+	
+	/**
+	 * Set of used variable names.
+	 *
+	 * Filled in by calling compile.
+	 */
+	dictionary<string, string> usedValues;
+	/**
+	 * Compile an AST to an action.
+	 *
+	 * Returns an action varialbe (a closure) which can evaluate the AST.
+	 * Fills in usedValues as well.
+	 */
+	action compile(AST ast) returns action<EvalContext > returns any {
+		if ast.tokenType = Token.NUMBER {
+			return Number(float.parse(ast.op)).val;
+		} else if ast.tokenType = Token.STRING {
+			return String(ast.op).val;
+		} else if ast.tokenType = Token.BOOLEAN {
+			return Boolean(boolean.parse(ast.op)).val;
+		}  else if ast.tokenType = Token.OPERATOR {
+			BinOp bin := BinOp(compile(ast.children[0]), compile(ast.children[1]));
+			if ast.op = "+" { return bin.add; } else
+			if ast.op = "-" { return bin.sub; } else
+			if ast.op = "*" { return bin.mul; } else
+			if ast.op = "/" { return bin.div; } else
+			if ast.op = "<" { return bin.lt; } else
+			if ast.op = ">" { return bin.gt; } else
+			if ast.op = "<=" { return bin.lte; } else
+			if ast.op = ">=" { return bin.gte; } else
+			if ast.op = "!=" { return bin.neq; } else
+			if ast.op = "=" { return bin.eq; } else 
+			if ast.op = "and" { return bin.op_and; } else
+			if ast.op = "or" { return bin.op_or; } else
+			if ast.op = "xor" { return bin.op_xor; } else {
+				throw error("Unrecognised operator '"+ast.op+"'"); //NON-L10N-IMPOSSIBLE
+			}
+		} else if ast.tokenType = Token.IDENTIFIER {
+			usedValues[ast.op] := ast.op;
+			return Variable(ast.op).val;
+		} else if ast.tokenType = AST.UNARY_OP {
+			UnaryOp op := UnaryOp(compile(ast.children[0]));
+			if ast.op = "-" {
+				return op.negation;
+			} else if ast.op = "+" {
+				return op.plus;
+			} else if ast.op = "not" {
+				return op.not_op;
+			} else {
+				throw error("Unrecognised unary operator '"+ast.op+"'"); //NON-L10N-IMPOSSIBLE
+			}
+		} else if ast.tokenType = AST.CALL {
+			sequence<action<EvalContext> returns any> args := [];
+			AST arg;
+			for arg in ast.children {
+				args.append(compile(arg));
+			}
+			action<EvalContext> returns any evalOn := args[0];
+			args.remove(0);
+			Call caller:= Call(evalOn, ast.op, args);
+			return caller.call;
+		} else {
+			throw error("Unrecognised token "+ast.tokenType.toString()+" : "+ast.op); //NON-L10N-IMPOSSIBLE
+		}
+	}
+	
+	/** Returns supported binary operators for specified type. */
+	static action supportedBinOperators(string type) returns sequence<string> {
+		dictionary<string,sequence<string> > types := {
+			"float": ["=", "!=", "<", ">", "<=", ">=", "+", "-", "*", "/"],
+			"string": ["=", "!=", "<", ">", "<=", ">=", "+"],
+			"boolean": ["=", "!=", "and", "or", "xor"]
+		};
+		return types[type];
+	}
+	
+	static action supportedTypes() returns dictionary<string,boolean> {
+		return {
+			"float":true,
+			"boolean": true,
+			"string": true
+		};
+	}
+	
+	/**
+	 * Determine the type yielded by an AST.
+	 *
+	 * Returns the type (and performs type checking) of what calling the result of compile will yield.
+	 * @param ast the AST root node.
+	 * @return the type - probably one of 'float' or 'boolean'
+	 * throws if there is a type mismatch.
+	 */
+	action type(AST ast) returns string {
+		if ast.tokenType = Token.NUMBER {
+			return "float";
+		} else if ast.tokenType = Token.STRING {
+			return "string";
+		} else if ast.tokenType = Token.BOOLEAN {
+			return "boolean";
+		} else if ast.tokenType = Token.OPERATOR {
+			string leftType := type(ast.children[0]);
+			string rightType := type(ast.children[1]);
+			
+			if leftType != rightType or supportedBinOperators(leftType).indexOf(ast.op) < 0 {
+				throw Exception("","");
+//				throw L10N.getLocalizedException("fwk_parser_compiler_incompatible_types_op", [<any> ast.op, leftType, rightType]);
+			}
+			if ast.op = "<" or ast.op = ">" or
+			   ast.op = "<=" or ast.op = ">=" or
+			   ast.op = "!=" or ast.op = "=" {
+				return "boolean";
+			}
+			return leftType;
+		} else if ast.tokenType = Token.IDENTIFIER {
+			if not symbols.hasKey(ast.op) {
+				throw Exception("","");
+//				throw L10N.getLocalizedException("fwk_parser_compiler_unavailable_input", [<any> ast.op]);
+			}
+			if symbols[ast.op] = "" {
+				throw Exception("","");
+//				throw L10N.getLocalizedException("fwk_parser_compiler_not_connected", [<any> ast.op]);
+			}
+			if not supportedTypes().hasKey(symbols[ast.op]) {
+				throw Exception("","");
+//				throw L10N.getLocalizedException("fwk_parser_compiler_unsupported_type", [<any> ast.op, symbols[ast.op]]);
+			}
+			return symbols[ast.op];
+		} else if ast.tokenType = AST.UNARY_OP {
+			string childType := type(ast.children[0]);
+			string requiredType := "";
+			if ast.op = "+" or ast.op = "-" {
+				requiredType := "float";
+			} else if ast.op = "not" {
+				requiredType := "boolean";
+			} else {
+				throw error("Unrecognised unary operator '"+ast.op+"'"); // NON-L10N-IMPOSSIBLE
+			}
+			
+			if childType != requiredType {
+				throw Exception("","");
+//				throw L10N.getLocalizedException("fwk_parser_compiler_unary_wrong_type", [<any> ast.op, childType]);
+			}
+			
+			return requiredType;
+		} else if ast.tokenType = AST.CALL {
+			dictionary<string,boolean> supportedType := supportedTypes();
+			string onType := type(ast.children[0]);
+			if not supportedType.hasKey(onType) {
+				throw Exception("","");
+//				throw L10N.getLocalizedException("fwk_parser_compiler_call_on_wrong_type", [<any> onType]);
+			}
+			any inst := any.newInstance(onType);
+			any act := inst.getAction(ast.op);
+			string returnType := act.getActionReturnTypeName();
+			if not supportedType.hasKey(returnType) {
+				throw Exception("","");
+//				throw L10N.getLocalizedException("fwk_parser_compiler_call_wrong_return_type", [<any> returnType, ast.op]);
+			}
+			// TODO: cannot introspect the parameter types of a method (they have no param names)
+			// for now allow it.
+			return act.getActionReturnTypeName();
+		} else {
+			throw error("Unrecognised token "+ast.tokenType.toString()+" : "+ast.op); //NON-L10N-IMPOSSIBLE
+		}
+	}
+	/** Throw an exception */
+	static action error(string msg) returns Exception {
+		return Exception(msg, "IllegalArgumentException"); //NON-L10N-FRAMEWORK
+	}
+}

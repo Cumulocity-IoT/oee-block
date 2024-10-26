@@ -1,0 +1,293 @@
+package com.adamos.oee;
+
+using com.apama.exceptions.Exception;
+
+monitor MatchingFilterIntervalBased {
+
+	
+	string configurationId;
+	string tenantId;
+	string deviceId;
+	string componentName := "MatchingFilter";
+	
+	action setupTransformationRuleHandler(Configuration configuration, string inputName, Input input, decimal startTime, string unit) {	
+		
+		decimal interval;
+		for interval in configuration.intervals {			
+			StatefulExpressionParser sep := StatefulExpressionParser.parseText(configuration.tenantId, input.value, Util.sum, Util.diff, 0.0, startTime+input.correlationOffset, interval);
+			if(sep.ep.error="") {
+				Subscription s;
+				for s in sep.ep.subscriptions() {
+					if(s.type.toUpper() = Subscription.MEASUREMENT) {
+						on all Measurement(type=s.name, source=s.deviceId) as m {
+							log inputName + interval.toString() + " " + m.type + "->" + logMVs(m.measurements);
+							applyToTransformationRule(inputName, sep, m.time, input.correlationOffset, m, unit, input.category);
+						}		
+					} else if(s.type.toUpper() = Subscription.ALARM) {
+						on all Alarm(type=s.name, source=s.deviceId) as a {
+							applyToTransformationRule(inputName, sep, a.time, input.correlationOffset, a, unit, input.category);
+						}		
+					} else if(s.type.toUpper() = Subscription.EVENT) {
+						on all Event(type=s.name, source=s.deviceId) as e {
+							log inputName + interval.toString() + " " + e.type + "->" + e.params.toString();
+							applyToTransformationRule(inputName, sep, e.time, input.correlationOffset, e, unit, input.category);
+						}		
+					}	
+				}	
+				on all MachineStatus(configurationId=configuration.id,tenantId=configuration.tenantId,source=configuration.deviceId,intervalName=sep.intervalName()) as status {
+					sep.currentInterval.appendStatus(status);
+				}
+			} else {
+				send Error(componentName, context.current().getName(), "ConfigurationError", "Rule cannot be parsed: " + input.value, tenantId, configurationId) to "";
+			}
+		}
+	}
+
+	action applyToTransformationRule(string inputName, StatefulExpressionParser sep, decimal eventTime, decimal offset, any a, string unit, string category) {
+		try {
+			if(sep.isRequired(a)) {
+				if(sep.currentInterval.isIn(eventTime)) {
+					any intermediate := sep.evaluateWith(a);
+					if(not intermediate.empty()) {
+						route InternalAmount(inputName, sep.intervalName(), eventTime-offset, (<float>intermediate).toDecimal(), category);
+					}				
+				} else if(sep.currentInterval.isAfter(eventTime)) {
+					decimal previous := Util.anyToFloat(sep.value).toDecimal();
+					sequence<any> splitSequence := sep.ep.split(a, sep.currentInterval);
+					if(splitSequence.size()=0) {	
+						decimal val := decimal.parse((<float>sep.retrieveAndReset()).formatFixed(OEE.DECIMAL_PRECISION));
+						sequence<Interval> intervals := sep.currentInterval.intervalsTo(eventTime);
+						Interval first := intervals[0];
+						Interval last := intervals[intervals.size()-1];
+						Interval int;
+						for int in intervals {
+							if(int=first) {
+								route InternalAmount(inputName, sep.intervalName(), int.end-offset, val-previous, category);								
+							}
+							if(int!=last) {
+								send ProducedMeasurement.buildWithCategories(componentName, configurationId, tenantId, inputName, sep.intervalName(), {category: val}, unit).forTimeAndOffset(int.end,offset) to ProducedMeasurement.CHANNEL;
+								val := (<float>sep.startValue).toDecimal();
+							}
+						}
+						sep.currentInterval.adjustTo(eventTime);
+					} else {
+						any first := splitSequence[0];
+						any last := splitSequence[splitSequence.size()-1];
+						any sa;
+						for sa in splitSequence {
+							decimal ia := Util.anyToFloat(sep.evaluateWith(sa)).toDecimal();
+							if(sa=first) {
+								decimal val := decimal.parse((<float>sep.retrieveAndReset()).formatFixed(OEE.DECIMAL_PRECISION));
+								send ProducedMeasurement.buildWithCategories(componentName, configurationId, tenantId, inputName, sep.intervalName(), {category: val}, unit).forTimeAndOffset(Actions.timeFrom(sa),offset) to ProducedMeasurement.CHANNEL;
+								route InternalAmount(inputName, sep.intervalName(), Actions.timeFrom(sa)-offset, ia, category);
+							}
+							if(sa!=last and sa !=first) {
+								decimal val := decimal.parse((<float>sep.retrieveAndReset()).formatFixed(OEE.DECIMAL_PRECISION));
+								send ProducedMeasurement.buildWithCategories(componentName, configurationId, tenantId, inputName, sep.intervalName(), {category: val}, unit).forTimeAndOffset(Actions.timeFrom(sa),offset) to ProducedMeasurement.CHANNEL;
+								route InternalAmount(inputName, sep.intervalName(), Actions.timeFrom(sa)-offset, ia, category);
+							} 
+							if(sa=last and sa !=first) {
+								decimal val := decimal.parse((<float>sep.value).formatFixed(OEE.DECIMAL_PRECISION));
+								route InternalAmount(inputName, sep.intervalName(), Actions.timeFrom(a)-offset, ia, category);
+							}
+							sep.currentInterval.adjustTo(Actions.timeFrom(sa));					
+						}
+					}
+				}				
+			} 
+		} catch(Exception e) {
+			sendError(e);
+		}
+	}
+	
+	action setupMachineStatusHandler(Configuration configuration, string inputName, Input input, decimal startTime, boolean targetState, string unit) {
+		if(configuration.machineEvents.hasKey(MachineStatus.NAME)) {
+			decimal offset := input.correlationOffset;
+			decimal interval;
+			for interval in configuration.intervals {
+				TimeInStateExpressionParser tisep := TimeInStateExpressionParser.parseText(
+				                                         configuration.tenantId, 
+				                                         OEE.negateForAvailabilityLossAmount(targetState, configuration.machineEvent(MachineStatus.NAME, input.category)), 
+				                                         startTime+offset, interval
+				                                         ).shortShutdown(configuration.shortShutdowns);
+				
+				if(tisep.ep.error="") {
+					if(tisep.ep.subscriptions().size()>0) {
+						setupSubscriptionsForMachineStatus(inputName, input, targetState, unit, tisep, offset);
+					} else {
+						setupStaticMachineStatusHandler(inputName, targetState, unit, tisep);
+					}
+				} else {
+					send Error(componentName, context.current().getName(), "ConfigurationError", "Rule cannot be parsed: " + configuration.machineEvent(MachineStatus.NAME, input.category), tenantId, configurationId) to "";
+				}
+			}
+			
+		}
+	}
+
+	action setupSubscriptionsForMachineStatus(string inputName, Input input, boolean targetState, string unit, TimeInStateExpressionParser tisep, decimal offset) {
+		Subscription s;
+		for s in tisep.ep.subscriptions() {
+			if(s.type.toUpper() = Subscription.MEASUREMENT) {
+				on all Measurement(type=s.name, source=s.deviceId) as m {
+					log inputName + tisep.intervalName() + " " + m.type + "->" + logMVs(m.measurements);
+					applyToMachineStatus(inputName, input, tisep, m.time, offset, m, targetState, unit);
+				}
+			} else if(s.type.toUpper() = Subscription.EVENT) {
+				on all Event(type=s.name, source=s.deviceId) as e {
+					log inputName + tisep.intervalName() + " " + e.type + "->" + e.params.toString() at INFO;
+					applyToMachineStatus(inputName, input, tisep, e.time, offset, e, targetState, unit);
+				}
+			} else if(s.type.toUpper() = Subscription.ALARM) {
+				on all Alarm(type=s.name, source=s.deviceId) as a {
+					applyToMachineStatus(inputName, input, tisep, a.time, offset, a, targetState, unit);
+				}
+			}
+		}
+	}
+
+	action setupStaticMachineStatusHandler(string inputName, boolean targetState, string unit, TimeInStateExpressionParser tisep) {
+		boolean state := <boolean> tisep.ep.evaluate();
+		decimal val;
+		if(state) {
+			val := tisep.currentInterval.interval;
+		} else {
+			val := 0.0d;
+		}
+		on all wait(tisep.currentInterval.interval.toFloat()) {
+			ProducedMeasurement pm := ProducedMeasurement.build(componentName,configurationId, tenantId, inputName, tisep.intervalName(), 
+									                            val, unit).forTime(tisep.currentInterval.end); 
+			send pm to ProducedMeasurement.CHANNEL;
+			tisep.currentInterval.adjustTo(tisep.currentInterval.end);
+		}
+	}
+	
+	action applyToMachineStatus(string inputName, Input input, TimeInStateExpressionParser tisep, decimal eventTime, decimal offset, any m,  boolean targetState, string unit) {
+		try {
+			if(tisep.isRequired(m)) {
+				boolean stateChanged := tisep.evaluateWith(m);
+				if(tisep.currentInterval.isAfter(eventTime)) {	
+					sequence<Interval> intervals := tisep.currentInterval.intervalsTo(eventTime);
+					Interval timespan;
+					for timespan in intervals {
+						if (timespan.end <= eventTime) {
+							decimal timeInState := tisep.timeInStateForInterval(targetState, timespan);
+							decimal value := decimal.parse((timeInState).formatFixed(OEE.DECIMAL_PRECISION));
+							ProducedMeasurement pm := ProducedMeasurement.buildWithCategories(componentName,configurationId, tenantId, inputName, tisep.intervalName(), 
+							 																  {input.category: value}, unit).forTimeAndOffset(timespan.end, offset); 
+							
+							send pm to ProducedMeasurement.CHANNEL;
+						}
+					}
+					tisep.currentInterval.adjustTo(eventTime);
+					// remove states we don't need any more 
+					tisep.cleanup(tisep.currentInterval.start);
+				}
+				if (stateChanged) {
+					route MachineStatus.build(configurationId, tenantId, OEE.machineStatus(tisep.state), deviceId, tisep.intervalName()).forTime(eventTime);
+				}
+			}
+		} catch(Exception e) {
+			sendError(e);
+		}
+	}
+
+	action setupQualityStatusHandler(Configuration configuration, string inputName, Input input, decimal startTime, string targetState, string unit) {
+		if(configuration.machineEvents.hasKey(QualityStatus.NAME)) {
+			decimal offset := input.correlationOffset;
+			decimal interval;
+			for interval in configuration.intervals {
+				TimeInStateExpressionParser tisep := TimeInStateExpressionParser.parseText(configuration.tenantId,
+				                                                                           OEE.negateForQualityLossAmount(targetState, configuration.machineEvent(QualityStatus.NAME, input.category)), 
+				                                                                           startTime+offset,  interval);
+				if(tisep.ep.error="") {					
+					AmountByQualityState amountByQuality;
+					if(tisep.ep.subscriptions().size() > 0) {
+						amountByQuality := AmountByQualityState.build(OEE.QUALITY_OK, targetState, false);
+					} else {
+						amountByQuality := AmountByQualityState.fixed(targetState, <boolean>tisep.ep.evaluate(), true);
+					}
+
+					on all wait(3600.0) {
+						decimal cutoff := currentTime.toDecimal() - 12.0d * 60.0d * 60.0d;
+						decimal amountTs;
+						for amountTs in amountByQuality.amountList.keys() {
+							if(amountTs < cutoff) {
+								amountByQuality.amountList.remove(amountTs);
+							}
+						}
+					}
+					
+					setupSubscriptionsForQualityStatus(inputName, input, unit, tisep, offset, amountByQuality);
+					on all InternalAmount(type=OEE.ACTUAL_PRODUCTION_AMOUNT, intervalName=tisep.intervalName()) as ia {
+						ia.timestamp := ia.timestamp+offset;
+						amountByQuality.add(ia);
+						if((amountByQuality.isStatic or amountByQuality.time>=tisep.currentInterval.end) and tisep.currentInterval.isAfter(ia.timestamp)) {
+							applyToQualityStatus(inputName, input, tisep.currentInterval, ia.timestamp, offset, amountByQuality, unit);	
+						}						
+
+					}
+				} else {
+					send Error(componentName, context.current().getName(), "ConfigurationError", "Rule cannot be parsed: " + configuration.machineEvent(QualityStatus.NAME, input.category), tenantId, configurationId) to "";
+				}
+			}	
+		}
+	}
+	
+	action setupSubscriptionsForQualityStatus(string inputName, Input input, string unit, TimeInStateExpressionParser tisep, decimal offset, AmountByQualityState amountByQuality) {	
+		Subscription s;
+		for s in tisep.ep.subscriptions() {
+			if(s.type.toUpper() = Subscription.MEASUREMENT) {
+				on all Measurement(type=s.name, source=s.deviceId) as m {
+					_processQualityStatus(m, input, m.time, inputName, unit, tisep, offset, amountByQuality);
+				}
+			} else if(s.type.toUpper() = Subscription.EVENT) {
+				on all Event(type=s.name, source=s.deviceId) as e {
+					_processQualityStatus(e, input, e.time, inputName, unit, tisep, offset, amountByQuality);			
+				}
+			} else if(s.type.toUpper() = Subscription.ALARM) {
+				on all Alarm(type=s.name, source=s.deviceId) as a {
+					_processQualityStatus(a, input, a.time, inputName, unit, tisep, offset, amountByQuality);
+				}
+			}
+		}	
+	}
+	
+	action _processQualityStatus(any data, Input input, decimal time, string inputName, string unit, TimeInStateExpressionParser tisep, decimal offset, AmountByQualityState amountByQuality) {
+		try {
+			if(tisep.isRequired(data)) {
+				boolean statusChanged := tisep.evaluateWith(data);
+				QualityStatus qe := QualityStatus.build(configurationId, tenantId, OEE.qualityStatus(tisep.state), deviceId, tisep.intervalName()).forTime(time);
+				amountByQuality.recordStatus(qe);
+				if(statusChanged) {
+					route qe;
+				}
+				if(tisep.currentInterval.isAfter(time) and amountByQuality.amountReceivedAfter(tisep.currentInterval.end)) {
+					applyToQualityStatus(inputName, input, tisep.currentInterval, time, offset, amountByQuality, unit);	
+				}												
+			}
+		} catch(Exception e) {
+			sendError(e);
+		}	
+	}
+
+	action applyToQualityStatus(string inputName, Input input, CurrentInterval currentInterval, decimal eventTime, decimal offset, AmountByQualityState amountByQuality, string unit) {
+		try {
+			sequence<Interval> intervals := currentInterval.intervalsTo(eventTime);
+			Interval first := intervals[0];
+			Interval last := intervals[intervals.size()-1];
+			Interval int;
+			for int in intervals {
+				if((int=first or int!=last) and amountByQuality.amountReceivedAfter(int.end)) {
+					decimal value := decimal.parse((amountByQuality.retrieveBy(int)).formatFixed(OEE.DECIMAL_PRECISION));
+					send ProducedMeasurement.buildWithCategories(componentName,configurationId, tenantId, inputName, currentInterval.name, 
+																 {input.category: value}, unit).forTimeAndOffset(int.end, offset) to ProducedMeasurement.CHANNEL;
+					currentInterval.adjustTo(int.end);
+				}
+			}
+		} catch(Exception e) {
+			sendError(e);
+		}
+	}
+		
+}

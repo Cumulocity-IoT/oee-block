@@ -1,0 +1,233 @@
+package apamax.analyticsbuilder.oee;
+
+using com.apama.correlator.timeformat.TimeFormat;
+
+event OEE {
+	constant string AVAILABILTY := "Availability";
+	constant string PERFORMANCE := "Performance";
+	constant string QUALITY := "Quality";
+	constant string OEE := "OEE";
+	constant string POTENTIAL_PRODUCTION_TIME := "PotentialProductionTime";
+	constant string IDEAL_AMOUNT := "IdealAmount";
+	constant string ACTUAL_PRODUCTION_TIME := "ActualProductionTime";
+	constant string AVAILABILITY_LOSS_TIME := "AvailabilityLossTime";
+	constant string AVAILABILITY_LOSS_AMOUNT := "AvailabilityLossAmount"; 
+	constant string IDEAL_PRODUCTION_AMOUNT := "IdealProductionAmount";
+	constant string IDEAL_MACHINE_RUNTIME := "IdealMachineRuntime";
+	constant string ACTUAL_PRODUCTION_AMOUNT := "ActualProductionAmount";
+	constant string PERFORMANCE_LOSS_TIME := "PerformanceLossTime";
+	constant string PERFORMANCE_LOSS_AMOUNT := "PerformanceLossAmount";
+	constant string IDEAL_QUALITY_TIME := "IdealQualityTime";
+	constant string ACTUAL_QUALITY_AMOUNT := "ActualQualityAmount";
+	constant string QUALITY_LOSS_AMOUNT := "QualityLossAmount";
+	constant string QUALITY_LOSS_TIME := "QualityLossTime";
+	constant string IDEAL_CYCLE_TIME := "IdealCycleTime";
+	constant string IDEAL_CYCLE_AMOUNT := "IdealCycleAmount";
+	constant string QUALITY_OK := "QualityOk";
+	constant string QUALITY_BAD := "QualityBad";
+	constant string MACHINE_UP := "MachineUp";
+	constant string MACHINE_DOWN := "MachineDown";
+	constant string CALCULATION_STARTED := "CalculationStarted";
+	constant string OEE_CALCULATION_ALARM := "OEECalculationAlarm";
+	constant string MACHINE_NOT_IN_PRODUCTION_ALARM := "MachineNotInProductionAlarm";
+	constant string IMPLAUSIBLE := "oee_implausible";
+	constant string RECALCULATION_TS := "oee_recalculated_at";
+	constant string WORKPIECE := "workpiece";
+	
+	constant integer DECIMAL_PRECISION := 4;
+	constant float PLAUSIBLE_ALLOWED_DEVIATION := 0.004; // since we show only 2 floats (rounded), we can ignore the other floats
+	
+	
+	static action machineStatus(boolean newState) returns string {
+		if(newState = true) {
+			return MACHINE_UP;
+		} else {
+			return MACHINE_DOWN;
+		}		
+	}
+	
+	static action qualityStatus(boolean newState) returns string {
+		if(newState = true) {
+			return QUALITY_OK;
+		} else {
+			return QUALITY_BAD;
+		}
+	}
+	
+	static action negateForAvailabilityLossAmount(boolean targetState, string expression) returns string {
+		if(targetState=true) {
+			return expression;
+		}
+		return "not (" + expression + ")";
+	}
+	
+	static action negateForQualityLossAmount(string targetState, string expression) returns string {
+		if(targetState=QUALITY_OK) {
+			return expression;
+		}
+		return "not (" + expression + ")";
+	}
+
+}
+
+event DateTimeConstants {
+	constant string DATE_PATTERN := "yyyy-MM-dd'T'HH:mm:ss'Z'";
+}
+
+event Timeslot {
+	wildcard string slotStart;
+	wildcard string slotEnd;
+	wildcard string slotType;
+	wildcard string seriesPostfix;
+	
+	static action build(string start, string end) returns Timeslot {
+		Timeslot ts := new Timeslot;
+		ts.slotStart := start;
+		ts.slotEnd := end;
+		return ts;
+	}
+
+	static action build2(float start, float end) returns Timeslot {
+		Timeslot ts := new Timeslot;
+		ts.slotStart := TimeFormat.formatUTC(start, DateTimeConstants.DATE_PATTERN);
+		ts.slotEnd := TimeFormat.formatUTC(end, DateTimeConstants.DATE_PATTERN);
+		return ts;
+	}
+
+	action slotStartDecimal() returns float {
+		return TimeFormat.parseTimeUTC(DateTimeConstants.DATE_PATTERN, slotStart);
+	}
+
+	action slotEndDecimal() returns float {
+		return TimeFormat.parseTimeUTC(DateTimeConstants.DATE_PATTERN, slotEnd);
+	}
+	
+	action type(string type) returns Timeslot {
+		slotType := type;
+		return self;
+	}
+	
+	action withPostfix(string postfix) returns Timeslot {
+		seriesPostfix := postfix;
+		return self;
+	}
+	
+	constant string PRODUCTION := "PRODUCTION";
+}
+
+event MachineEvent {
+	wildcard string value;
+	wildcard string category;	
+	constant string NONE := "";
+}
+
+
+event Subscription {
+	wildcard string type;
+	wildcard string name;
+	wildcard string deviceId;
+
+	constant string MEASUREMENT := "MEASUREMENT";
+	constant string EVENT := "EVENT";
+	constant string ALARM := "ALARM";
+}
+
+event Workpiece {
+	wildcard boolean isActive;
+	wildcard float amount;
+	wildcard string unit;
+	wildcard integer timeunit;
+	
+	constant integer BY_SECOND := 0;
+	constant integer BY_MINUTE := 1;
+	constant integer BY_HOUR := 2;
+	constant integer BY_DAY := 3;
+	
+	action timeUnitInSeconds() returns float {
+		if(timeunit=Workpiece.BY_SECOND) {
+			return 1.0;
+		} else if(timeunit=Workpiece.BY_MINUTE) {
+			return 60.0;
+		} else if(timeunit=Workpiece.BY_HOUR) {
+			return 3600.0;
+		} else if(timeunit=Workpiece.BY_DAY) {
+			return 86400.0;
+		}
+		return 60.0;
+	}
+	
+	action timeUnitToString() returns string {
+		if(timeunit=Workpiece.BY_SECOND) {
+			return "second";
+		} else if(timeunit=Workpiece.BY_MINUTE) {
+			return "minute";
+		} else if(timeunit=Workpiece.BY_HOUR) {
+			return "hour";
+		} else if(timeunit=Workpiece.BY_DAY) {
+			return "day";
+		}
+		return "";
+	}
+}
+
+event InputValue {
+	float time;
+	any value;
+	float weight;
+}
+
+event OutputValue {
+	float time;
+	float value;
+}
+
+event InternalAmount {
+	string type;
+	string intervalName;
+	wildcard float timestamp;
+	wildcard float value;
+}
+
+event MachineStatus {
+	constant string NAME := "MACHINE_STATUS";
+	wildcard string type;
+	string source;
+	wildcard float time;
+	string intervalName;
+
+	static action build(string type, string source, string intervalName) returns MachineStatus {
+		MachineStatus e := new MachineStatus;
+		e.type := type;
+		e.source := source;
+		e.time := TimeFormat.getSystemTime();
+		e.intervalName := intervalName;
+		return e;
+	}
+	
+	action forTime(float ts) returns MachineStatus {
+		time := ts;
+		return self;
+	}
+}
+
+event QualityStatus {
+	constant string NAME := "QUALITY_STATUS";
+	wildcard string type;
+	string source;
+	wildcard float time;
+	string intervalName;
+
+	static action build(string type, string source, string intervalName) returns QualityStatus {
+		QualityStatus e := new QualityStatus;
+		e.type := type;
+		e.source := source;
+		e.time := TimeFormat.getSystemTime();
+		e.intervalName := intervalName;
+		return e;
+	}
+	
+	action forTime(float ts) returns QualityStatus {
+		time := ts;
+		return self;
+	}	
+}
