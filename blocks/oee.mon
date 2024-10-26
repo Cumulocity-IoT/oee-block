@@ -201,8 +201,8 @@ event Oee {
 
 	action performOEECalculation_APT_APA_AQA(float interval, float actualProductionTime, float actualProductionAmount, float actualQualityAmount) returns Value {
 		float idealCycleAmount := $parameters.ica;
-		float cycleLength := interval / idealCycleAmount;
-		float idealCycleTime := cycleLength; 
+		float cycleLength := interval;
+		float idealCycleTime := cycleLength / idealCycleAmount; 
 		float potentialProductionTime := interval;
 		// Level 2
 		float idealAmount := (potentialProductionTime / cycleLength) * idealCycleAmount;
@@ -244,9 +244,9 @@ event Oee {
 	}
 
 	action performOEECalculation_APT_AQA_QLA(float interval, float actualProductionTime, float actualQualityAmount, float qualityLossAmount) returns Value {
-    	float idealCycleAmount := $parameters.ica;
-		float cycleLength := interval / idealCycleAmount;
-		float idealCycleTime := cycleLength; 
+		float idealCycleAmount := $parameters.ica;
+		float cycleLength := interval;
+		float idealCycleTime := cycleLength / idealCycleAmount; 
 		float potentialProductionTime := interval;  
 		// Level 2
 		float availabilityLossTime := potentialProductionTime - actualProductionTime; 
@@ -288,9 +288,9 @@ event Oee {
     }
 
 	action performOEECalculation_APT_APA_QLA(float interval, float actualProductionTime, float actualProductionAmount, float qualityLossAmount) returns Value {
-    	float idealCycleAmount := $parameters.ica;
-		float cycleLength := interval / idealCycleAmount;
-		float idealCycleTime := cycleLength; 
+		float idealCycleAmount := $parameters.ica;
+		float cycleLength := interval;
+		float idealCycleTime := cycleLength / idealCycleAmount; 
 		float potentialProductionTime := interval;
         // Level 2
 		float idealAmount := (potentialProductionTime / cycleLength) * idealCycleAmount;
@@ -365,11 +365,9 @@ event Oee {
             setupCalculation($activation, $blockState);
         }
 
-        if(now($activation,$input_status)) {
-            InputValue iv := InputValue($input_pieces.timestamp, <boolean>$input_status.value, 1.0);
-            sequence<OutputValue> result := applyToMachineStatus($blockState.machine_status, iv);
-            $blockState.results[OEE.ACTUAL_PRODUCTION_TIME].appendSequence(result);
-        }
+        InputValue iv := InputValue($input_pieces.timestamp, <boolean>$input_status.value, 1.0);
+        sequence<OutputValue> result := applyToMachineStatus($blockState.machine_status, iv);
+        $blockState.results[OEE.ACTUAL_PRODUCTION_TIME].appendSequence(result);
 
         if(now($activation,$input_pieces)) {
             InputValue iv := InputValue($input_pieces.timestamp, <float>$input_pieces.value, 1.0);
@@ -386,16 +384,13 @@ event Oee {
         sequence<OutputValue> aptr := $blockState.results[OEE.ACTUAL_PRODUCTION_TIME];
         sequence<OutputValue> apar := $blockState.results[OEE.ACTUAL_PRODUCTION_AMOUNT];        
         sequence<OutputValue> aqar := $blockState.results[OEE.ACTUAL_QUALITY_AMOUNT];
-        log "APTs " + aptr;
-        log "APAs " + apar;
-        log "AQAs " + aqar;
         sequence<float> toClear := new sequence<float>; 
         OutputValue apa;
         for apa in apar {
             optional<OutputValue> apt := findin(aptr,apa.time);
             optional<OutputValue> aqa := findin(aqar,apa.time);
             ifpresent apt,aqa {
-                Value details := $blockState.oee_calculation($parameters.interval, $parameters.interval, apa.value, aqa.value);
+                Value details := roundResults($blockState.oee_calculation($parameters.interval, apt.value, apa.value, aqa.value));
                 details.value := true;
                 details.timestamp := apa.time;
                 $setOutput_oee($activation, <float>details.properties[OEE.OEE]);
@@ -413,6 +408,15 @@ event Oee {
         // apply to inputs
         // take into account machine status for other inputs
         // other calculation methods
+    }
+
+    action roundResults(Value result) returns Value {
+        string key;
+        for key in result.properties.keys() {
+            float value := <float>result.properties[key];
+            result.properties[key] := float.parse(value.formatFixed(OEE.DECIMAL_PRECISION));
+        }
+        return result;
     }
 
     action clear(sequence<OutputValue> s, sequence<float> toClear) returns sequence<OutputValue> {

@@ -35,9 +35,7 @@ event OEE {
 	constant string WORKPIECE := "workpiece";
 	
 	constant integer DECIMAL_PRECISION := 4;
-	constant float PLAUSIBLE_ALLOWED_DEVIATION := 0.004; // since we show only 2 floats (rounded), we can ignore the other floats
-	
-	
+
 	static action machineStatus(boolean newState) returns string {
 		if(newState = true) {
 			return MACHINE_UP;

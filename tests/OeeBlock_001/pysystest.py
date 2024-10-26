@@ -43,9 +43,10 @@ class PySysTest(AnalyticsBuilderBaseTest):
 							  self.inputEvent('pieces_ok', 1, id=modelId),
 							  self.timestamp(310),
 							  self.inputEvent('status', False, id=modelId),
-                              self.inputEvent('pieces', 2, id=modelId),
-							  self.inputEvent('pieces_ok', 1, id=modelId),
+                              self.inputEvent('pieces', 0, id=modelId),
+							  self.inputEvent('pieces_ok', 0, id=modelId),
 							  self.timestamp(350),
+							  self.inputEvent('status', True, id=modelId),
                               self.inputEvent('pieces', 2, id=modelId),
 							  self.inputEvent('pieces_ok', 1, id=modelId),
 							  self.timestamp(390),
@@ -54,13 +55,23 @@ class PySysTest(AnalyticsBuilderBaseTest):
 							  self.timestamp(430),
                               self.inputEvent('pieces', 2, id=modelId),
 							  self.inputEvent('pieces_ok', 1, id=modelId),
-							  self.timestamp(470),
+							  self.timestamp(460),
                               self.inputEvent('pieces', 2, id=modelId),
 							  self.inputEvent('pieces_ok', 1, id=modelId),
-  							  self.inputEvent('status', True, id=modelId),
+							  self.timestamp(500),
                               )
-		
 		correlator.flush()
 
 	def validate(self):
 		self.checkLogs(warnIgnores=[f'Set time back to.*'])
+		self.assertBlockOutput('timestamp', 	[90.0,	150.0,	210.0,	270.0,	330.0,		390.0,		450.0])
+		self.assertBlockOutput('availability', 	[1.0,	1.0,	1.0,	1.0,	0.6667, 	0.6667, 	1.0])
+		self.assertBlockOutput('performance', 	[0.5,	0.3,	0.3,	0.3,	0.15,	 	0.45, 		0.3333])
+		self.assertBlockOutput('quality', 		[0.5,	0.5,	0.5,	0.5,	0.5,	 	0.5, 		0.5])
+		self.assertThat('output == expected', 
+						output=self.details('ActualProductionAmount'), 
+						expected=				[5.0, 	3.0, 	3.0, 	3.0, 	1.0, 		3.0, 		3.3333])
+
+	def details(self, selector, modelId='model_0', partitionId=None,time=None):
+		return [evt['properties'][selector] for evt in self.apama.extractEventLoggerOutput(self.analyticsBuilderCorrelator.logfile)
+			if evt['modelId'] == modelId and evt['outputId'] == 'details' and (partitionId == None or evt['partitionId'] == partitionId ) and (time == None or evt['time'] == time )]
