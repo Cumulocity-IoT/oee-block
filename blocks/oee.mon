@@ -363,8 +363,7 @@ event Oee {
         if($blockState.calculation_path=0) {
             setupCalculation($activation, $blockState);
         }
-
-        InputValue iv := InputValue($input_pieces.timestamp, <boolean>$input_status.value);
+        InputValue iv := InputValue($activation.timestamp, <boolean>$input_status.value);
         sequence<OutputValue> result := applyToMachineStatus($blockState.machine_status, iv);
         $blockState.results[OEE.ACTUAL_PRODUCTION_TIME].appendSequence(result);
 
@@ -385,7 +384,6 @@ event Oee {
             sequence<OutputValue> result := applyToTransformationRule(OEE.QUALITY_LOSS_AMOUNT, $blockState.sep[OEE.QUALITY_LOSS_AMOUNT], iv);
             $blockState.results[OEE.QUALITY_LOSS_AMOUNT].appendSequence(result);
         }
-
 
         sequence<float> toClear := new sequence<float>; 
         OutputValue output1;
