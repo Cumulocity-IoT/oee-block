@@ -1,4 +1,4 @@
-__pysys_title__   = r""" Category OEE - Basic OEE block test Path 1 """ 
+__pysys_title__   = r""" Category OEE - Basic OEE block test Path 1 (APT, APA, AQA) """ 
 #                        ================================================================================
 __pysys_purpose__ = r""" """ 
 	

@@ -368,22 +368,33 @@ event Oee {
         $blockState.results[OEE.ACTUAL_PRODUCTION_TIME].appendSequence(result);
 
         if(now($activation,$input_pieces)) {
+            log "Pieces";
             InputValue iv := InputValue($input_pieces.timestamp, <float>$input_pieces.value);
             sequence<OutputValue> result := applyToTransformationRule(OEE.ACTUAL_PRODUCTION_AMOUNT, $blockState.sep[OEE.ACTUAL_PRODUCTION_AMOUNT], iv);
             $blockState.results[OEE.ACTUAL_PRODUCTION_AMOUNT].appendSequence(result);
         }
 
         if(now($activation,$input_pieces_ok)) {
+            log "Pieces ok";
             InputValue iv := InputValue($input_pieces_ok.timestamp, <float>$input_pieces_ok.value);
             sequence<OutputValue> result := applyToTransformationRule(OEE.ACTUAL_QUALITY_AMOUNT, $blockState.sep[OEE.ACTUAL_QUALITY_AMOUNT], iv);
             $blockState.results[OEE.ACTUAL_QUALITY_AMOUNT].appendSequence(result);
         }
 
         if(now($activation,$input_pieces_nok)) {
+            log "Pieces nok";
             InputValue iv := InputValue($input_pieces_nok.timestamp, <float>$input_pieces_nok.value);
             sequence<OutputValue> result := applyToTransformationRule(OEE.QUALITY_LOSS_AMOUNT, $blockState.sep[OEE.QUALITY_LOSS_AMOUNT], iv);
             $blockState.results[OEE.QUALITY_LOSS_AMOUNT].appendSequence(result);
         }
+
+        log "Output1 : " + $blockState.results[$blockState.output1];
+        log "Output2 : " + $blockState.results[$blockState.output2];
+        log "Output3 : " + $blockState.results[$blockState.output3];
+
+
+        log "All : " + $blockState.results;
+
 
         sequence<float> toClear := new sequence<float>; 
         OutputValue output1;
