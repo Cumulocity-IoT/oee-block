@@ -178,24 +178,15 @@ event OutputValue {
 	float value;
 }
 
-event InternalAmount {
-	string type;
-	string intervalName;
-	wildcard float timestamp;
-	wildcard float value;
-}
-
 event MachineStatus {
 	constant string NAME := "MACHINE_STATUS";
 	wildcard string type;
-	string source;
 	wildcard float time;
 	string intervalName;
 
-	static action build(string type, string source, string intervalName) returns MachineStatus {
+	static action build(string type, string intervalName) returns MachineStatus {
 		MachineStatus e := new MachineStatus;
 		e.type := type;
-		e.source := source;
 		e.time := TimeFormat.getSystemTime();
 		e.intervalName := intervalName;
 		return e;
@@ -210,14 +201,12 @@ event MachineStatus {
 event QualityStatus {
 	constant string NAME := "QUALITY_STATUS";
 	wildcard string type;
-	string source;
 	wildcard float time;
 	string intervalName;
 
-	static action build(string type, string source, string intervalName) returns QualityStatus {
+	static action build(string type, string intervalName) returns QualityStatus {
 		QualityStatus e := new QualityStatus;
 		e.type := type;
-		e.source := source;
 		e.time := TimeFormat.getSystemTime();
 		e.intervalName := intervalName;
 		return e;

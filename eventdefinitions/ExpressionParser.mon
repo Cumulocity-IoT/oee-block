@@ -49,7 +49,7 @@ event CurrentInterval {
 		ci.start := base;
 		ci.end := ci.start + interval;
 		ci.name := Interval.intervalName(interval);
-		ci.statusUpdates := [MachineStatus.build(OEE.MACHINE_UP,"",ci.name).forTime(base)];
+		ci.statusUpdates := [MachineStatus.build(OEE.MACHINE_UP,ci.name).forTime(base)];
 		return ci;
 	}
 	
@@ -493,36 +493,17 @@ event StatefulExpressionParser {
 event AmountByQualityState {
 	string initialState;
 	string targetState;
-	boolean isStatic;
 	dictionary<float,float> amountList;
 	dictionary<float,boolean> states;
 	float time;
 	
-	static action build(string initialState, string targetState, boolean isStatic) returns AmountByQualityState {
-		return AmountByQualityState(initialState, targetState, isStatic, new dictionary<float,float>, new dictionary<float,boolean>,0.0);
-	}
-	
-	static action fixed(string targetState, boolean staticStatus, boolean isStatic) returns AmountByQualityState {
-		if(targetState=OEE.QUALITY_OK) {
-			if(staticStatus) {
-				return AmountByQualityState.build(OEE.QUALITY_OK, OEE.QUALITY_OK, isStatic);	
-			} else {
-				return AmountByQualityState.build(OEE.QUALITY_BAD, OEE.QUALITY_OK, isStatic);
-			}
-		} else {
-			if(staticStatus) {
-				return AmountByQualityState.build(OEE.QUALITY_BAD, OEE.QUALITY_BAD, isStatic);	
-			} else {
-				return AmountByQualityState.build(OEE.QUALITY_OK, OEE.QUALITY_BAD, isStatic);
-			}							
-		}
-
+	static action build(string initialState, string targetState) returns AmountByQualityState {
+		return AmountByQualityState(initialState, targetState, new dictionary<float,float>, new dictionary<float,boolean>,0.0);
 	}
 
-	
-	action add(InternalAmount ia) {
-		if(not amountList.hasKey(ia.timestamp)) {
-			amountList.add(ia.timestamp, ia.value);			
+	action add(OutputValue ov) {
+		if(not amountList.hasKey(ov.time)) {
+			amountList.add(ov.time, ov.value);			
 		}
 	}
 	

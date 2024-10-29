@@ -36,6 +36,8 @@ event Oee_$State {
     action<float, float, float, float> returns Value oee_calculation;
     TimeInStateExpressionParser machine_status;
     dictionary<string,StatefulExpressionParser> sep;
+    optional<AmountByQualityState> amountByQuality;
+    TimeInStateExpressionParser quality_status;
     dictionary<string,sequence<OutputValue>> results;
 }
 
@@ -110,8 +112,9 @@ event Oee {
         } else if($blockState.calculation_path=2) {
             $blockState.machine_status := TimeInStateExpressionParser.parseText("value", $activation.timestamp, $parameters.interval);
             $blockState.sep.add(OEE.ACTUAL_PRODUCTION_AMOUNT, 
-                                StatefulExpressionParser.parseText("value", Util.sum, Util.diff, 0.0, $activation.timestamp, $parameters.interval));
-            // TODO quality status handler
+                                StatefulExpressionParser.parseText("value", Util.sum, Util.diff, 0.0, $activation.timestamp, $parameters.interval)); 
+            $blockState.amountByQuality := AmountByQualityState.build(OEE.QUALITY_OK,OEE.QUALITY_OK);
+            $blockState.quality_status := TimeInStateExpressionParser.parseText("value", $activation.timestamp, $parameters.interval);
         } else if($blockState.calculation_path=3) {
             $blockState.machine_status := TimeInStateExpressionParser.parseText("value", $activation.timestamp, $parameters.interval);
             $blockState.sep.add(OEE.ACTUAL_QUALITY_AMOUNT, 
@@ -144,21 +147,46 @@ event Oee {
         }
         if (stateChanged) {
             // TODO needed?
-            route MachineStatus.build(OEE.machineStatus(tisep.state), "", tisep.intervalName()).forTime(iv.time);
+            route MachineStatus.build(OEE.machineStatus(tisep.state), tisep.intervalName()).forTime(iv.time);
         }
         return result;
 	}
 
+	action applyToQualityStatus(TimeInStateExpressionParser tisep, AmountByQualityState amountByQuality, InputValue iv) {
+        boolean statusChanged := tisep.evaluateWith(iv);
+        QualityStatus qe := QualityStatus.build(OEE.qualityStatus(tisep.state), tisep.intervalName()).forTime(iv.time);
+        amountByQuality.recordStatus(qe);
+ 	}
 
-	action applyToTransformationRule(string inputName, StatefulExpressionParser sep, InputValue iv) returns sequence<OutputValue> {
+	action retrieveQualityStatus(TimeInStateExpressionParser tisep, AmountByQualityState amountByQuality, float time) returns sequence<OutputValue> {
+        sequence<OutputValue> result := new sequence<OutputValue>;
+        if(tisep.currentInterval.isAfter(time) and amountByQuality.amountReceivedAfter(tisep.currentInterval.end)) {
+            sequence<Interval> intervals := tisep.currentInterval.intervalsTo(time);
+            Interval first := intervals[0];
+            Interval last := intervals[intervals.size()-1];
+            Interval int;
+            for int in intervals {
+                if((int=first or int!=last) and amountByQuality.amountReceivedAfter(int.end)) {
+                    float value := float.parse((amountByQuality.retrieveBy(int)).formatFixed(OEE.DECIMAL_PRECISION));
+                    result.append(OutputValue(int.end, value));
+                    tisep.currentInterval.adjustTo(int.end);
+                }
+            }
+        }											
+        return result;
+    }
+
+
+	action applyToTransformationRule(string inputName, StatefulExpressionParser sep, optional<AmountByQualityState> amountByQuality, InputValue iv) returns sequence<OutputValue> {
         sequence<OutputValue> result := new sequence<OutputValue>;
 
         if(sep.currentInterval.isIn(iv.time)) {
             any intermediate := sep.evaluateWith(iv);
             if(not intermediate.empty()) {
-                // TODO needed?
-                route InternalAmount(inputName, sep.intervalName(), iv.time, (<float>intermediate));
-            }
+                ifpresent amountByQuality as amountByQuality {
+                    amountByQuality.add(OutputValue(iv.time, <float>intermediate));
+                }
+            } 
         } else if(sep.currentInterval.isAfter(iv.time)) {
             float previous := Util.anyToFloat(sep.value);
             sequence<InputValue> splitSequence := sep.ep.split(iv, sep.currentInterval);
@@ -170,9 +198,9 @@ event Oee {
                 Interval int;
                 for int in intervals {
                     if(int=first) {
-                        // TODO needed?                        
-                        log "Route " + InternalAmount(inputName, sep.intervalName(), int.end, val-previous); 
-                        route InternalAmount(inputName, sep.intervalName(), int.end, val-previous);								
+                        ifpresent amountByQuality as amountByQuality {
+                            amountByQuality.add(OutputValue(int.end, val-previous));
+                        }
                     }
                     if(int!=last) {
                         result.append(OutputValue(int.end, val));
@@ -189,19 +217,22 @@ event Oee {
                     if(sa=first) {
                         float val := float.parse((<float>sep.retrieveAndReset()).formatFixed(OEE.DECIMAL_PRECISION));
                         result.append(OutputValue(sa.time, val));
-                        // TODO needed?                        
-                        route InternalAmount(inputName, sep.intervalName(), sa.time, ia);
+                        ifpresent amountByQuality as amountByQuality {
+                            amountByQuality.add(OutputValue(sa.time, ia));
+                        }
                     }
                     if(sa!=last and sa !=first) {
                         float val := float.parse((<float>sep.retrieveAndReset()).formatFixed(OEE.DECIMAL_PRECISION));
                         result.append(OutputValue(sa.time, val));
-                        // TODO needed?                        
-                        route InternalAmount(inputName, sep.intervalName(), sa.time, ia);
+                        ifpresent amountByQuality as amountByQuality {
+                            amountByQuality.add(OutputValue(sa.time, ia));
+                        }
                     } 
                     if(sa=last and sa !=first) {
                         float val := float.parse((<float>sep.value).formatFixed(OEE.DECIMAL_PRECISION));
-                        // TODO needed?
-                        route InternalAmount(inputName, sep.intervalName(), sa.time, ia);
+                        ifpresent amountByQuality as amountByQuality {
+                            amountByQuality.add(OutputValue(sa.time, ia));
+                        }
                     }
                     sep.currentInterval.adjustTo(sa.time);					
                 }
@@ -367,34 +398,39 @@ event Oee {
         sequence<OutputValue> result := applyToMachineStatus($blockState.machine_status, iv);
         $blockState.results[OEE.ACTUAL_PRODUCTION_TIME].appendSequence(result);
 
+        ifpresent $blockState.amountByQuality as amountByQuality {  
+            InputValue iv := InputValue($activation.timestamp, <boolean>$input_qok.value);
+            applyToQualityStatus($blockState.quality_status, amountByQuality, iv);
+            sequence<OutputValue> result := retrieveQualityStatus($blockState.quality_status, amountByQuality, iv.time);
+            $blockState.results[OEE.ACTUAL_QUALITY_AMOUNT].appendSequence(result);
+        }
+
         if(now($activation,$input_pieces)) {
-            log "Pieces";
             InputValue iv := InputValue($input_pieces.timestamp, <float>$input_pieces.value);
-            sequence<OutputValue> result := applyToTransformationRule(OEE.ACTUAL_PRODUCTION_AMOUNT, $blockState.sep[OEE.ACTUAL_PRODUCTION_AMOUNT], iv);
+            sequence<OutputValue> result := applyToTransformationRule(OEE.ACTUAL_PRODUCTION_AMOUNT, $blockState.sep[OEE.ACTUAL_PRODUCTION_AMOUNT], $blockState.amountByQuality, iv);
             $blockState.results[OEE.ACTUAL_PRODUCTION_AMOUNT].appendSequence(result);
+            ifpresent $blockState.amountByQuality as amountByQuality {   
+                OutputValue ia;
+                for ia in result {
+                    if((amountByQuality.time>=$blockState.quality_status.currentInterval.end) and $blockState.quality_status.currentInterval.isAfter(ia.time)) {
+                        sequence<OutputValue> result := retrieveQualityStatus($blockState.quality_status, amountByQuality, iv.time);
+                        $blockState.results[OEE.ACTUAL_QUALITY_AMOUNT].appendSequence(result);
+                    }
+                }
+            } 						
         }
 
         if(now($activation,$input_pieces_ok)) {
-            log "Pieces ok";
             InputValue iv := InputValue($input_pieces_ok.timestamp, <float>$input_pieces_ok.value);
-            sequence<OutputValue> result := applyToTransformationRule(OEE.ACTUAL_QUALITY_AMOUNT, $blockState.sep[OEE.ACTUAL_QUALITY_AMOUNT], iv);
+            sequence<OutputValue> result := applyToTransformationRule(OEE.ACTUAL_QUALITY_AMOUNT, $blockState.sep[OEE.ACTUAL_QUALITY_AMOUNT], new optional<AmountByQualityState>, iv);
             $blockState.results[OEE.ACTUAL_QUALITY_AMOUNT].appendSequence(result);
         }
 
         if(now($activation,$input_pieces_nok)) {
-            log "Pieces nok";
             InputValue iv := InputValue($input_pieces_nok.timestamp, <float>$input_pieces_nok.value);
-            sequence<OutputValue> result := applyToTransformationRule(OEE.QUALITY_LOSS_AMOUNT, $blockState.sep[OEE.QUALITY_LOSS_AMOUNT], iv);
+            sequence<OutputValue> result := applyToTransformationRule(OEE.QUALITY_LOSS_AMOUNT, $blockState.sep[OEE.QUALITY_LOSS_AMOUNT], new optional<AmountByQualityState>, iv);
             $blockState.results[OEE.QUALITY_LOSS_AMOUNT].appendSequence(result);
         }
-
-        log "Output1 : " + $blockState.results[$blockState.output1];
-        log "Output2 : " + $blockState.results[$blockState.output2];
-        log "Output3 : " + $blockState.results[$blockState.output3];
-
-
-        log "All : " + $blockState.results;
-
 
         sequence<float> toClear := new sequence<float>; 
         OutputValue output1;
@@ -417,9 +453,7 @@ event Oee {
         $blockState.results[$blockState.output1] := clear($blockState.results[$blockState.output1], toClear);
         $blockState.results[$blockState.output2] := clear($blockState.results[$blockState.output2], toClear);
         $blockState.results[$blockState.output3] := clear($blockState.results[$blockState.output3], toClear);
-        // TODO apply to all inputs
         // TODO take into account machine status for other inputs
-        // TODO other calculation methods
     }
 
     action roundResults(Value result) returns Value {
