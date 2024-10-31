@@ -38,7 +38,7 @@ event Oee_$State {
     dictionary<string,StatefulExpressionParser> sep;
     optional<AmountByQualityState> amountByQuality;
     TimeInStateExpressionParser quality_status;
-    dictionary<string,sequence<OutputValue>> results;
+    dictionary<string,sequence<CalculationValue>> results;
 }
 
 
@@ -99,9 +99,9 @@ event Oee {
             $blockState.output3 := OEE.QUALITY_LOSS_AMOUNT;
             $blockState.oee_calculation := performOEECalculation_APT_APA_QLA;
         }
-            $blockState.results[$blockState.output1] := new sequence<OutputValue>;
-            $blockState.results[$blockState.output2] := new sequence<OutputValue>;
-            $blockState.results[$blockState.output3] := new sequence<OutputValue>;
+            $blockState.results[$blockState.output1] := new sequence<CalculationValue>;
+            $blockState.results[$blockState.output2] := new sequence<CalculationValue>;
+            $blockState.results[$blockState.output3] := new sequence<CalculationValue>;
 
         if($blockState.calculation_path=1) {
             $blockState.machine_status := TimeInStateExpressionParser.parseText("value", $activation.timestamp, $parameters.interval);
@@ -130,8 +130,8 @@ event Oee {
         }
 	}
 
-	action applyToMachineStatus(TimeInStateExpressionParser tisep, InputValue iv) returns sequence<OutputValue> {
-        sequence<OutputValue> result := new sequence<OutputValue>;
+	action applyToMachineStatus(TimeInStateExpressionParser tisep, CalculationValue iv) returns sequence<CalculationValue> {
+        sequence<CalculationValue> result := new sequence<CalculationValue>;
         boolean stateChanged := tisep.evaluateWith(iv);
         if(tisep.currentInterval.isAfter(iv.time)) {	
             sequence<Interval> intervals := tisep.currentInterval.intervalsTo(iv.time);
@@ -139,7 +139,7 @@ event Oee {
             for timespan in intervals {
                 if (timespan.end <= iv.time) {
                     float value := float.parse((tisep.timeInStateForInterval(true, timespan)).formatFixed(OEE.DECIMAL_PRECISION));
-                    result.append(OutputValue(timespan.end, value));
+                    result.append(CalculationValue(timespan.end, value));
                 }
             }
             tisep.currentInterval.adjustTo(iv.time);
@@ -152,14 +152,14 @@ event Oee {
         return result;
 	}
 
-	action applyToQualityStatus(TimeInStateExpressionParser tisep, AmountByQualityState amountByQuality, InputValue iv) {
+	action applyToQualityStatus(TimeInStateExpressionParser tisep, AmountByQualityState amountByQuality, CalculationValue iv) {
         boolean statusChanged := tisep.evaluateWith(iv);
         QualityStatus qe := QualityStatus.build(OEE.qualityStatus(tisep.state), tisep.intervalName()).forTime(iv.time);
         amountByQuality.recordStatus(qe);
  	}
 
-	action retrieveQualityStatus(TimeInStateExpressionParser tisep, AmountByQualityState amountByQuality, float time) returns sequence<OutputValue> {
-        sequence<OutputValue> result := new sequence<OutputValue>;
+	action retrieveQualityStatus(TimeInStateExpressionParser tisep, AmountByQualityState amountByQuality, float time) returns sequence<CalculationValue> {
+        sequence<CalculationValue> result := new sequence<CalculationValue>;
         if(tisep.currentInterval.isAfter(time) and amountByQuality.amountReceivedAfter(tisep.currentInterval.end)) {
             sequence<Interval> intervals := tisep.currentInterval.intervalsTo(time);
             Interval first := intervals[0];
@@ -168,7 +168,7 @@ event Oee {
             for int in intervals {
                 if((int=first or int!=last) and amountByQuality.amountReceivedAfter(int.end)) {
                     float value := float.parse((amountByQuality.retrieveBy(int)).formatFixed(OEE.DECIMAL_PRECISION));
-                    result.append(OutputValue(int.end, value));
+                    result.append(CalculationValue(int.end, value));
                     tisep.currentInterval.adjustTo(int.end);
                 }
             }
@@ -177,19 +177,19 @@ event Oee {
     }
 
 
-	action applyToTransformationRule(string inputName, StatefulExpressionParser sep, optional<AmountByQualityState> amountByQuality, InputValue iv) returns sequence<OutputValue> {
-        sequence<OutputValue> result := new sequence<OutputValue>;
+	action applyToTransformationRule(string inputName, StatefulExpressionParser sep, optional<AmountByQualityState> amountByQuality, CalculationValue iv) returns sequence<CalculationValue> {
+        sequence<CalculationValue> result := new sequence<CalculationValue>;
 
         if(sep.currentInterval.isIn(iv.time)) {
             any intermediate := sep.evaluateWith(iv);
             if(not intermediate.empty()) {
                 ifpresent amountByQuality as amountByQuality {
-                    amountByQuality.add(OutputValue(iv.time, <float>intermediate));
+                    amountByQuality.add(CalculationValue(iv.time, <float>intermediate));
                 }
             } 
         } else if(sep.currentInterval.isAfter(iv.time)) {
             float previous := Util.anyToFloat(sep.value);
-            sequence<InputValue> splitSequence := sep.ep.split(iv, sep.currentInterval);
+            sequence<CalculationValue> splitSequence := sep.ep.split(iv, sep.currentInterval);
             if(splitSequence.size()=0) {	
                 float val := float.parse((<float>sep.retrieveAndReset()).formatFixed(OEE.DECIMAL_PRECISION));
                 sequence<Interval> intervals := sep.currentInterval.intervalsTo(iv.time);
@@ -199,39 +199,39 @@ event Oee {
                 for int in intervals {
                     if(int=first) {
                         ifpresent amountByQuality as amountByQuality {
-                            amountByQuality.add(OutputValue(int.end, val-previous));
+                            amountByQuality.add(CalculationValue(int.end, val-previous));
                         }
                     }
                     if(int!=last) {
-                        result.append(OutputValue(int.end, val));
+                        result.append(CalculationValue(int.end, val));
                         val := (<float>sep.startValue);
                     }
                 }
                 sep.currentInterval.adjustTo(iv.time);
             } else {
-                InputValue first := splitSequence[0];
-                InputValue last := splitSequence[splitSequence.size()-1];
-                InputValue sa;
+                CalculationValue first := splitSequence[0];
+                CalculationValue last := splitSequence[splitSequence.size()-1];
+                CalculationValue sa;
                 for sa in splitSequence {
                     float ia := Util.anyToFloat(sep.evaluateWith(sa));
                     if(sa=first) {
                         float val := float.parse((<float>sep.retrieveAndReset()).formatFixed(OEE.DECIMAL_PRECISION));
-                        result.append(OutputValue(sa.time, val));
+                        result.append(CalculationValue(sa.time, val));
                         ifpresent amountByQuality as amountByQuality {
-                            amountByQuality.add(OutputValue(sa.time, ia));
+                            amountByQuality.add(CalculationValue(sa.time, ia));
                         }
                     }
                     if(sa!=last and sa !=first) {
                         float val := float.parse((<float>sep.retrieveAndReset()).formatFixed(OEE.DECIMAL_PRECISION));
-                        result.append(OutputValue(sa.time, val));
+                        result.append(CalculationValue(sa.time, val));
                         ifpresent amountByQuality as amountByQuality {
-                            amountByQuality.add(OutputValue(sa.time, ia));
+                            amountByQuality.add(CalculationValue(sa.time, ia));
                         }
                     } 
                     if(sa=last and sa !=first) {
                         float val := float.parse((<float>sep.value).formatFixed(OEE.DECIMAL_PRECISION));
                         ifpresent amountByQuality as amountByQuality {
-                            amountByQuality.add(OutputValue(sa.time, ia));
+                            amountByQuality.add(CalculationValue(sa.time, ia));
                         }
                     }
                     sep.currentInterval.adjustTo(sa.time);					
@@ -394,26 +394,26 @@ event Oee {
         if($blockState.calculation_path=0) {
             setupCalculation($activation, $blockState);
         }
-        InputValue iv := InputValue($activation.timestamp, <boolean>$input_status.value);
-        sequence<OutputValue> result := applyToMachineStatus($blockState.machine_status, iv);
+        CalculationValue iv := CalculationValue($activation.timestamp, $input_status.value);
+        sequence<CalculationValue> result := applyToMachineStatus($blockState.machine_status, iv);
         $blockState.results[OEE.ACTUAL_PRODUCTION_TIME].appendSequence(result);
 
         ifpresent $blockState.amountByQuality as amountByQuality {  
-            InputValue iv := InputValue($activation.timestamp, <boolean>$input_qok.value);
+            CalculationValue iv := CalculationValue($activation.timestamp, $input_qok.value);
             applyToQualityStatus($blockState.quality_status, amountByQuality, iv);
-            sequence<OutputValue> result := retrieveQualityStatus($blockState.quality_status, amountByQuality, iv.time);
+            sequence<CalculationValue> result := retrieveQualityStatus($blockState.quality_status, amountByQuality, iv.time);
             $blockState.results[OEE.ACTUAL_QUALITY_AMOUNT].appendSequence(result);
         }
 
         if(now($activation,$input_pieces)) {
-            InputValue iv := InputValue($input_pieces.timestamp, <float>$input_pieces.value);
-            sequence<OutputValue> result := applyToTransformationRule(OEE.ACTUAL_PRODUCTION_AMOUNT, $blockState.sep[OEE.ACTUAL_PRODUCTION_AMOUNT], $blockState.amountByQuality, iv);
+            CalculationValue iv := CalculationValue($input_pieces.timestamp, $input_pieces.value);
+            sequence<CalculationValue> result := applyToTransformationRule(OEE.ACTUAL_PRODUCTION_AMOUNT, $blockState.sep[OEE.ACTUAL_PRODUCTION_AMOUNT], $blockState.amountByQuality, iv);
             $blockState.results[OEE.ACTUAL_PRODUCTION_AMOUNT].appendSequence(result);
             ifpresent $blockState.amountByQuality as amountByQuality {   
-                OutputValue ia;
+                CalculationValue ia;
                 for ia in result {
                     if((amountByQuality.time>=$blockState.quality_status.currentInterval.end) and $blockState.quality_status.currentInterval.isAfter(ia.time)) {
-                        sequence<OutputValue> result := retrieveQualityStatus($blockState.quality_status, amountByQuality, iv.time);
+                        sequence<CalculationValue> result := retrieveQualityStatus($blockState.quality_status, amountByQuality, iv.time);
                         $blockState.results[OEE.ACTUAL_QUALITY_AMOUNT].appendSequence(result);
                     }
                 }
@@ -421,24 +421,24 @@ event Oee {
         }
 
         if(now($activation,$input_pieces_ok)) {
-            InputValue iv := InputValue($input_pieces_ok.timestamp, <float>$input_pieces_ok.value);
-            sequence<OutputValue> result := applyToTransformationRule(OEE.ACTUAL_QUALITY_AMOUNT, $blockState.sep[OEE.ACTUAL_QUALITY_AMOUNT], new optional<AmountByQualityState>, iv);
+            CalculationValue iv := CalculationValue($input_pieces_ok.timestamp, $input_pieces_ok.value);
+            sequence<CalculationValue> result := applyToTransformationRule(OEE.ACTUAL_QUALITY_AMOUNT, $blockState.sep[OEE.ACTUAL_QUALITY_AMOUNT], new optional<AmountByQualityState>, iv);
             $blockState.results[OEE.ACTUAL_QUALITY_AMOUNT].appendSequence(result);
         }
 
         if(now($activation,$input_pieces_nok)) {
-            InputValue iv := InputValue($input_pieces_nok.timestamp, <float>$input_pieces_nok.value);
-            sequence<OutputValue> result := applyToTransformationRule(OEE.QUALITY_LOSS_AMOUNT, $blockState.sep[OEE.QUALITY_LOSS_AMOUNT], new optional<AmountByQualityState>, iv);
+            CalculationValue iv := CalculationValue($input_pieces_nok.timestamp, $input_pieces_nok.value);
+            sequence<CalculationValue> result := applyToTransformationRule(OEE.QUALITY_LOSS_AMOUNT, $blockState.sep[OEE.QUALITY_LOSS_AMOUNT], new optional<AmountByQualityState>, iv);
             $blockState.results[OEE.QUALITY_LOSS_AMOUNT].appendSequence(result);
         }
 
         sequence<float> toClear := new sequence<float>; 
-        OutputValue output1;
+        CalculationValue output1;
         for output1 in $blockState.results[$blockState.output1] {
-            optional<OutputValue> output2 := findin($blockState.results[$blockState.output2],output1.time);
-            optional<OutputValue> output3 := findin($blockState.results[$blockState.output3],output1.time);
+            optional<CalculationValue> output2 := findin($blockState.results[$blockState.output2],output1.time);
+            optional<CalculationValue> output3 := findin($blockState.results[$blockState.output3],output1.time);
             ifpresent output2,output3 {
-                Value details := roundResults($blockState.oee_calculation($parameters.interval, output1.value, output2.value, output3.value));
+                Value details := roundResults($blockState.oee_calculation($parameters.interval, <float>output1.value, <float>output2.value, <float>output3.value));
                 details.value := true;
                 details.timestamp := output1.time;
                 $setOutput_oee($activation, <float>details.properties[OEE.OEE]);
@@ -465,9 +465,9 @@ event Oee {
         return result;
     }
 
-    action clear(sequence<OutputValue> s, sequence<float> toClear) returns sequence<OutputValue> {
-        sequence<OutputValue> s_new := new sequence<OutputValue>;
-        OutputValue v;
+    action clear(sequence<CalculationValue> s, sequence<float> toClear) returns sequence<CalculationValue> {
+        sequence<CalculationValue> s_new := new sequence<CalculationValue>;
+        CalculationValue v;
         for v in s {
             if(toClear.indexOf(v.time)=-1) {
                 s_new.append(v);
@@ -476,14 +476,14 @@ event Oee {
         return s_new;
     }
 
-    action findin(sequence<OutputValue> s, float time) returns optional<OutputValue> {
-        OutputValue v;
+    action findin(sequence<CalculationValue> s, float time) returns optional<CalculationValue> {
+        CalculationValue v;
         for v in s {
             if(v.time=time) {
-                return optional<OutputValue>(v);
+                return optional<CalculationValue>(v);
             }
         }
-        return new optional<OutputValue>;
+        return new optional<CalculationValue>;
     }
 
     action now(Activation $activation, Value v) returns boolean {

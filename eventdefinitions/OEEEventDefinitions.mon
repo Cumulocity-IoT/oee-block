@@ -168,14 +168,9 @@ event Workpiece {
 	}
 }
 
-event InputValue {
+event CalculationValue {
 	float time;
 	any value;
-}
-
-event OutputValue {
-	float time;
-	float value;
 }
 
 event MachineStatus {

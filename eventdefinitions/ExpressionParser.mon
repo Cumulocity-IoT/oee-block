@@ -185,7 +185,7 @@ event ExpressionParser {
 		value := 0.0;
 	}
 	
-	action split(InputValue v, CurrentInterval currentInterval) returns sequence<InputValue> {
+	action split(CalculationValue v, CurrentInterval currentInterval) returns sequence<CalculationValue> {
 		if(lastReceived=0.0) {
 			lastReceived := currentInterval.start;
 		}
@@ -196,9 +196,9 @@ event ExpressionParser {
 		Interval first := intervals[0];
 		Interval last := intervals[intervals.size()-1];
 		Interval int;
-		sequence<InputValue> result := new sequence<InputValue>;
+		sequence<CalculationValue> result := new sequence<CalculationValue>;
 		for int in intervals {
-			InputValue splitV := v.clone();
+			CalculationValue splitV := v.clone();
 			float affectedTimeInInterval;
 			if(int=first) {
 				affectedTimeInInterval := currentInterval.availabilityIn(lastReceived, int.end);
@@ -217,7 +217,7 @@ event ExpressionParser {
 		return result;
 	}
 	
-	action append(InputValue v) {
+	action append(CalculationValue v) {
 		lastReceived := v.time;
 		value := v.value;
 	}
@@ -407,7 +407,7 @@ event TimeInStateExpressionParser {
 		                                   CurrentInterval.build(intervalLength, now));
 	}
 	
-	action evaluateWith(InputValue v) returns boolean {
+	action evaluateWith(CalculationValue v) returns boolean {
 		ep.append(v);
 		float time := v.time;
 		boolean newState := <boolean> ep.evaluate();
@@ -465,7 +465,7 @@ event StatefulExpressionParser {
 		return ep.error != "";
 	}
 	
-	action evaluateWith(InputValue v) returns any {
+	action evaluateWith(CalculationValue v) returns any {
 		ep.append(v);
 		any intermediate := new any;
 		intermediate := ep.evaluate();
@@ -501,9 +501,9 @@ event AmountByQualityState {
 		return AmountByQualityState(initialState, targetState, new dictionary<float,float>, new dictionary<float,boolean>,0.0);
 	}
 
-	action add(OutputValue ov) {
+	action add(CalculationValue ov) {
 		if(not amountList.hasKey(ov.time)) {
-			amountList.add(ov.time, ov.value);			
+			amountList.add(ov.time, <float>ov.value);			
 		}
 	}
 	
