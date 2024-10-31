@@ -66,7 +66,7 @@ The Actual Production Amount reflects the products manufactured in reality withi
 
 ### Ideal Quality Time (12)
 
-The Ideal Quality Time is calculated by subtracting the Quality Losses from the Ideal Machine Runtime, see [Losses](#losses). It reflects the time that an ideal machine, which ultimately only produces good parts, would have needed to produce the Actual Quality Amount.
+The Ideal Quality Time is calculated by subtracting the Quality Losses from the Ideal Machine Runtime, see [Losses](/docs/oee-theory/003losses.md). It reflects the time that an ideal machine, which ultimately only produces good parts, would have needed to produce the Actual Quality Amount.
 
 ![Ideal quality time](/docs/images/theory-ideal-quality-time-formula.png)
 
