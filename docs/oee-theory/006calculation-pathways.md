@@ -3,7 +3,7 @@
 
 The following image explains the naming conventions of the pathways. 
 
-![Naming convention of the pathways](/images/theory-naming-convention.png)
+![Naming convention of the pathways](/docs/images/theory-naming-convention.png)
 
 In the following, details on each calculation pathway are provided.
 
@@ -59,7 +59,7 @@ The tables at the top show which variables, starting from the input variables, a
 
 This overview shows which variables are needed to calculate each variable, including the OEE. The formulas marked in italics in the table below are necessary to calculate the OEE.
 
-![Calculation pathway 1](/images/theory-calculation-pathway-1.png)
+![Calculation pathway 1](/docs/images/theory-calculation-pathway-1.png)
 
 <table>
 <tr>
@@ -233,7 +233,7 @@ Availability Losses (Time) = Availability Losses (Amount) x Ideal Cycle Amount<s
 
 This overview shows which variables are needed to calculate each variable, including the OEE. The formulas marked in italics in the table below are necessary to calculate the OEE.
 
-![Calculation pathway 2](/images/theory-calculation-pathway-2.png)
+![Calculation pathway 2](/docs/images/theory-calculation-pathway-2.png)
 
 <table>
 <tr>
@@ -407,7 +407,7 @@ Performance Losses (Time) = Availability Losses (Amount) x Ideal Cycle Amount<su
 
 This overview shows which variables are needed to calculate each variable, including the OEE. The formulas marked in italics in the table below are necessary to calculate the OEE.
 
-![Calculation pathway 3](/images/theory-calculation-pathway-3.png)
+![Calculation pathway 3](/docs/images/theory-calculation-pathway-3.png)
 
 <table>
 <tr>
@@ -580,7 +580,7 @@ Performance Losses (Time) = Performance Losses (Amount) x Ideal Cycle Amount<sup
 
 This overview shows which variables are needed to calculate each variable, including the OEE. The formulas marked in italics in the table below are necessary to calculate the OEE.
 
-![Calculation pathway 4](/images/theory-calculation-pathway-4.png)
+![Calculation pathway 4](/docs/images/theory-calculation-pathway-4.png)
 
 <table>
 <tr>
@@ -753,7 +753,7 @@ Performance Losses (Time) = Ideal Production Amount x Actual Production Amount
 
 This overview shows which variables are needed to calculate each variable, including the OEE. The formulas marked in italics in the table below are necessary to calculate the OEE.
 
-![Calculation pathway 5](/images/theory-calculation-pathway-5.png)
+![Calculation pathway 5](/docs/images/theory-calculation-pathway-5.png)
 
 <table>
 <tr>
@@ -927,7 +927,7 @@ Performance Losses (Amount) = Ideal Production Amount - Actual Production Amount
 
 This overview shows which variables are needed to calculate each variable, including the OEE. The formulas marked in italics in the table below are necessary to calculate the OEE.
 
-![Calculation pathway 6](/images/theory-calculation-pathway-6.png)
+![Calculation pathway 6](/docs/images/theory-calculation-pathway-6.png)
 
 <table>
 <tr>
