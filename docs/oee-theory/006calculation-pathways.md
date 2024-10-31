@@ -7,11 +7,9 @@ The following image explains the naming conventions of the pathways.
 
 In the following, details on each calculation pathway are provided.
 
-{{< c8y-admon-info >}}
 The tables at the top show which variables, starting from the input variables, are needed to calculate all other variables including the OEE. The different colors used in the images are used only for better understanding and clarity. Below the image you find the corresponding formulas. The formulas which are necessary to calculate the OEE are marked in italics in the table.
-{{< /c8y-admon-info >}}
 
-### Calculation pathway #1 {#calculation-pathway-1}
+### Calculation pathway #1
 
 <table>
 <colgroup>
@@ -185,7 +183,7 @@ Availability Losses (Time) = Availability Losses (Amount) x Ideal Cycle Amount<s
 <tr>
 </table>
 
-### Calculation pathway #2 {#calculation-pathway-2}
+### Calculation pathway
 
 <table>
 <colgroup>
@@ -359,7 +357,7 @@ Performance Losses (Time) = Availability Losses (Amount) x Ideal Cycle Amount<su
 <tr>
 </table>
 
-### Calculation pathway #3 {#calculation-pathway-3}
+### Calculation pathway
 
 <table>
 <colgroup>
@@ -533,7 +531,7 @@ Performance Losses (Time) = Performance Losses (Amount) x Ideal Cycle Amount<sup
 <tr>
 </table>
 
-### Calculation pathway #4 {#calculation-pathway-4}
+### Calculation pathway
 
 <table>
 <colgroup>
@@ -706,7 +704,7 @@ Performance Losses (Time) = Ideal Production Amount x Actual Production Amount
 <tr>
 </table>
 
-### Calculation pathway #5 {#calculation-pathway-5}
+### Calculation pathway #5
 
 <table>
 <colgroup>
@@ -879,7 +877,7 @@ Performance Losses (Amount) = Ideal Production Amount - Actual Production Amount
 <tr>
 </table>
 
-### Calculation pathway #6 {#calculation-pathway-6}
+### Calculation pathway
 
 <table>
 <colgroup>
