@@ -147,14 +147,14 @@ event Oee {
         }
         if (stateChanged) {
             // TODO needed?
-            route MachineStatus.build(OEE.machineStatus(tisep.state), tisep.intervalName()).forTime(iv.time);
+            route MachineStatus.build(OEE.machineStatus(tisep.state)).forTime(iv.time);
         }
         return result;
 	}
 
 	action applyToQualityStatus(TimeInStateExpressionParser tisep, AmountByQualityState amountByQuality, CalculationValue iv) {
         boolean statusChanged := tisep.evaluateWith(iv);
-        QualityStatus qe := QualityStatus.build(OEE.qualityStatus(tisep.state), tisep.intervalName()).forTime(iv.time);
+        QualityStatus qe := QualityStatus.build(OEE.qualityStatus(tisep.state)).forTime(iv.time);
         amountByQuality.recordStatus(qe);
  	}
 

@@ -26,10 +26,6 @@ event Interval {
 		return end - fromTime;
 	}
 	
-	static action intervalName(float interval) returns string {
-		return interval.integralPart().toString()+"s";
-	}
-
 }
 
 event CurrentInterval {
@@ -38,7 +34,6 @@ event CurrentInterval {
 	wildcard integer count;
 	wildcard float start; 
 	wildcard float end;
-	wildcard string name;
 	wildcard sequence<MachineStatus> statusUpdates;
 	
 	static action build(float interval, float base) returns CurrentInterval {
@@ -48,8 +43,7 @@ event CurrentInterval {
 		ci.count := 0;
 		ci.start := base;
 		ci.end := ci.start + interval;
-		ci.name := Interval.intervalName(interval);
-		ci.statusUpdates := [MachineStatus.build(OEE.MACHINE_UP,ci.name).forTime(base)];
+		ci.statusUpdates := [MachineStatus.build(OEE.MACHINE_UP).forTime(base)];
 		return ci;
 	}
 	
@@ -102,9 +96,7 @@ event CurrentInterval {
 	action isAfter(float time) returns boolean {
 		return time>=end;
 	}
-	
-	// VT: Looks like this method doesn't take "short shutdowns" into account.
-	// IMO, we should use StatusTracker for caluclation availability time for the given interval.
+
 	action availabilityIn(float start, float end) returns float {
 		float availability := 0.0;
 		MachineStatus ms;
@@ -148,14 +140,6 @@ event CurrentInterval {
 		statusUpdates.append(s);
 	}
 
-}
-
-event AppendResult {
-	boolean reset;
-	
-	static action merge(AppendResult a, AppendResult b) returns AppendResult {
-		return AppendResult(a.reset or b.reset);
-	}
 }
 
 event ExpressionParser {
@@ -255,15 +239,13 @@ event StateTracker {
 	sequence<StatePoint> statePoints;
 	float lastPointTime;
 	float lastMachineUpTime;
-	float shortShutdown;
 	boolean initialStateIsUp;
 	
 		
 	static action create(boolean initialState) returns StateTracker {
 		float lastPointTime := 0.0;
 		float lastMachineUp := 0.0;
-		float shortShutdown := 0.0;
-		return StateTracker(new sequence<StatePoint>, lastPointTime, lastMachineUp, shortShutdown, initialState);
+		return StateTracker(new sequence<StatePoint>, lastPointTime, lastMachineUp, initialState);
 	}
 	
 	action addState(StatePoint statePoint) {
@@ -276,14 +258,10 @@ event StateTracker {
 			statePoints.append(statePoint);
 			lastPointTime := statePoint.time;
 			
-			removeShutdown(statePoint);
-			
 			if (statePoint.state = true) {
 				lastMachineUpTime := statePoint.time;
 			}
-			
-		} else { // insert at correct place
-			//TODO: fix implemention for shutdowns.
+		} else {
 			integer idx := 0;
 			while (idx < statePoints.size()) {
 				if (statePoints[idx].time > statePoint.time) {
@@ -297,32 +275,12 @@ event StateTracker {
 			}
 		}
 	}
-	
-	
-	action removeShutdown(StatePoint latestPoint) {
-		if (latestPoint.state = true and shortShutdown >= latestPoint.time - lastMachineUpTime) {
-			__removeLatestSatePoint();
-			while (statePoints.size() > 0) {
-				StatePoint statePoint := statePoints[statePoints.size() - 1];
-				if (statePoint.state = false) {
-					__removeLatestSatePoint();	 
-				} else {
-					break;
-				}
-			}			
-			statePoints.append(latestPoint);
-		}
-	}
-	
-	action __removeLatestSatePoint() {
-		statePoints.remove(statePoints.size()  - 1);
-	}
-	
+		
 	/**
 	* Returns AvailibiltyLossTime or ActualProductionTime depending on <code>targetState</code>
 	* @param targetState - if true(MACHINE_UP) the ActualProductionTime will be returned, othwerwise AvailibiltyLossTime
 	*/
-	action timeInStateForInteval(boolean targetState, boolean currentState, Interval interval) returns float {
+	action timeInStateForInterval(boolean targetState, boolean currentState, Interval interval) returns float {
 		float actualProductionTime := actualProductionTimeForInterval(currentState, interval);
 		if (targetState = true) {
 			return actualProductionTime;	
@@ -422,13 +380,9 @@ event TimeInStateExpressionParser {
 	}
 
 	action timeInStateForInterval(boolean targetState, Interval interval) returns float {
-		return stateTracker.timeInStateForInteval(targetState, state, interval);
+		return stateTracker.timeInStateForInterval(targetState, state, interval);
 	}
 	
-	action intervalName() returns string {
-		return currentInterval.name;
-	}
-
 }
 
 /**
@@ -484,10 +438,6 @@ event StatefulExpressionParser {
 		}
 	}
 
-	action intervalName() returns string {
-		return currentInterval.name;
-	}
-	
 }
 
 event AmountByQualityState {
