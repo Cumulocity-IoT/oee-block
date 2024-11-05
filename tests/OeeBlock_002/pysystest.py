@@ -43,6 +43,7 @@ class PySysTest(AnalyticsBuilderBaseTest):
                               self.inputEvent('pieces', 0, id=modelId),
 							  self.timestamp(350),
 							  self.inputEvent('status', True, id=modelId),
+							  self.timestamp(360),
                               self.inputEvent('pieces', 2, id=modelId),
 							  self.timestamp(390),
                               self.inputEvent('pieces', 2, id=modelId),
@@ -58,11 +59,11 @@ class PySysTest(AnalyticsBuilderBaseTest):
 		self.checkLogs(warnIgnores=[f'Set time back to.*'])
 		self.assertBlockOutput('timestamp', 	[90.0,		150.0,		210.0,	270.0,	330.0,		390.0,		450.0])
 		self.assertBlockOutput('availability', 	[1.0,		1.0,		1.0,	1.0,	0.6667, 	0.6667, 	1.0])
-		self.assertBlockOutput('performance', 	[0.5333,	0.2667,		0.3,	0.3,	0.15,	 	0.45, 		0.3333])
-		self.assertBlockOutput('quality', 		[1.0,		0.25,		1.0,	1.0,	1.0,	 	1.0, 		1.0])
+		self.assertBlockOutput('performance', 	[0.5333,	0.2667,		0.3,	0.3,	0.0,	 	0.6, 		0.3333])
+		self.assertBlockOutput('quality', 		[1.0,		0.25,		1.0,	1.0,	0.0,	 	1.0, 		1.0])
 		self.assertThat('output == expected', 
 						output=self.details('ActualProductionAmount'), 
-						expected=				[5.3333, 	2.6667,		3.0, 	3.0, 	1.0, 		3.0, 		3.3333])
+						expected=				[5.3333, 	2.6667,		3.0, 	3.0, 	0.0, 		4.0, 		3.3333])
 
 	def details(self, selector, modelId='model_0', partitionId=None,time=None):
 		return [evt['properties'][selector] for evt in self.apama.extractEventLoggerOutput(self.analyticsBuilderCorrelator.logfile)
