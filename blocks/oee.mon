@@ -53,7 +53,39 @@ event Oee_$State {
 /**
 * OEE
 *
-* TODO: explanation and restrictions on inputs
+* Calculates Overall Equipment Effectiveness (OEE) a measure for the effective usage of manufacturing equipment.
+*
+* OEE is calculated as the product of availability, performance, and quality. Equipment that is 100% available 
+* running at 100% and producing only good parts results in an OEE of 100%.
+*
+* The block calculates OEE by processing inputs about equipment availability, number of pieces produced and the 
+* quality of the produced pieces. For this a subset of the inputs of the block need to be connected:
+*
+* <ul>
+* <li>Machine Status - availability indicator (true / false)</li>
+* <li>Pieces - number of produced pieces</li>
+* <li>Pcs Ok - number of produced pieces of good quality</li>
+* <li>Pieces NOk - number produced pieces of bad quality</li>
+* <li>Quality Ok - quality indicator (true/false)</li>
+* </ul>
+*
+* Machine Status must always be provided, for the other three parameters the following combinations are allowed:
+* <ul>
+* <li>Pieces + Pcs Ok</li>
+* <li>Pieces + Quality Ok</li>
+* <li>Pcs Ok + Pcs NOk</li>
+* <li>Pieces + Pcs Ok</li>
+* </ul>
+*
+* Furthermore, OEE calculation is influenced by the parameters with which the block is configured. OEE is 
+* calculated on a fixed interval and the interval defines this. Inputs during that interval are aggregated. 
+* For example for the machine status, all times during which the input was true are added up to calculate 
+* the availability. The piece counts (Pieces, Pieces Ok, Pieces NOk) are also aggregated. The first piece 
+* count in an interval is split between the current and the previous interval proportionally to the time in 
+* the interval it reflects. If the last piece count in the previous interval was at 300s of 600s interval 
+* length and the first one in this interval happens after 150s, 66.6% of the pieces will be assigned to the
+* previous interval and 33.3% to the current interval in which the piece count was reported.
+* (More details: <a href="https://github.com/Cumulocity-IoT/oee-block/blob/main/docs/oee-theory/004splitting.md" target="_blank">Splitting</a>)
 *  
 * @$blockCategory Aggregates
 */
@@ -381,23 +413,29 @@ event Oee {
         return details;
     }
 
+    constant string $INPUT_TYPE_status := "boolean";
+    constant string $INPUT_TYPE_pieces := "float";
+    constant string $INPUT_TYPE_pieces_ok := "float";
+    constant string $INPUT_TYPE_pieces_nok := "float";
+    constant string $INPUT_TYPE_qok := "boolean";
+
     /**
      *
+	 * @param $input_status Machine availability status indicator.
+     * @$inputName status Machine Status
      * @param $activation The current activation.
 	 * @param $input_pieces The produced piece count.
-     * @$inputName pieces Pieces.
+     * @$inputName pieces Pieces
 	 * @param $input_pieces_ok The ok piece count.
      * @$inputName pieces_ok Pcs Ok
 	 * @param $input_pieces_nok The not ok piece count.
-     * @$inputName pieces_nok Pcs NOk.
+     * @$inputName pieces_nok Pcs NOk
 	 * @param $input_qok Quality indicator.
-     * @$inputName qok Quality Ok.
-	 * @param $input_status Machine availability status indicator.
-     * @$inputName pieces Machine Status.
+     * @$inputName qok Quality Ok
 	 */
-    action $process(Activation $activation, Value $input_pieces, 
+    action $process(Activation $activation, Value $input_status, Value $input_pieces, 
                     Value $input_pieces_ok, Value $input_pieces_nok, Value $input_qok,
-                    Value $input_status, Oee_$State $blockState) {
+                    Oee_$State $blockState) {
         
         if($blockState.calculation_path=0) {
             setupCalculation($activation, $blockState);
@@ -551,8 +589,6 @@ event Oee {
      * <li>Performance Loss Time</li>
      * <li>Quality Loss Time</li>
      * <li>Availability Loss Time</li>
-     * <li></li>
-     * <li></li>
 	 * </ul>     
      **/
     action<Activation,Value> $setOutput_details;
