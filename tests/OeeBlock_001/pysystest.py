@@ -4,14 +4,11 @@ __pysys_purpose__ = r""" """
 	
 __pysys_created__ = "2024-04-07"
 
-from apamax.analyticsbuilder.basetest import AnalyticsBuilderBaseTest
+from basetest.OeeBaseTest import OeeBaseTest
 from pysys.constants import *
+import basetest.OeeBaseTest
 
-class PySysTest(AnalyticsBuilderBaseTest):
-	def preInjectBlock(self, corr):
-		AnalyticsBuilderBaseTest.preInjectBlock(self, corr)
-		corr.injectEPL([self.project.APAMA_HOME +'/monitors/'+i+'.mon' for i in ['TimeFormatEvents']])
-		corr.injectEPL([self.project.SOURCE +'/eventdefinitions/'+i+'.mon' for i in ['Util','Parser','OEEEventDefinitions', 'ExpressionParser']])
+class PySysTest(OeeBaseTest):
     
 	def execute(self):
 		correlator = self.startAnalyticsBuilderCorrelator(blockSourceDir=f'{self.project.SOURCE}/blocks/')
@@ -64,7 +61,6 @@ class PySysTest(AnalyticsBuilderBaseTest):
 		correlator.flush()
 
 	def validate(self):
-		self.checkLogs(warnIgnores=[f'Set time back to.*'])
 		self.assertBlockOutput('timestamp', 	[90.0,	150.0,	210.0,	270.0,	330.0,		390.0,		450.0])
 		self.assertBlockOutput('availability', 	[1.0,	1.0,	1.0,	1.0,	0.6667, 	0.6667, 	1.0])
 		self.assertBlockOutput('performance', 	[0.5,	0.3,	0.3,	0.3,	0.0,	 	0.6, 		0.3333])
@@ -73,6 +69,3 @@ class PySysTest(AnalyticsBuilderBaseTest):
 						output=self.details('ActualProductionAmount'), 
 						expected=				[5.0, 	3.0, 	3.0, 	3.0, 	0.0, 		4.0, 		3.3333])
 
-	def details(self, selector, modelId='model_0', partitionId=None,time=None):
-		return [evt['properties'][selector] for evt in self.apama.extractEventLoggerOutput(self.analyticsBuilderCorrelator.logfile)
-			if evt['modelId'] == modelId and evt['outputId'] == 'details' and (partitionId == None or evt['partitionId'] == partitionId ) and (time == None or evt['time'] == time )]
