@@ -58,33 +58,33 @@ event Oee_$State {
 * OEE is calculated as the product of availability, performance, and quality. Equipment that is 100% available 
 * running at 100% and producing only good parts results in an OEE of 100%.
 *
-* The block calculates OEE by processing inputs about equipment availability, number of pieces produced and the 
-* quality of the produced pieces. For this a subset of the inputs of the block need to be connected:
+* The block calculates OEE by processing inputs about equipment availability, amount produced and the 
+* quality of the produced amount. For this a subset of the inputs of the block need to be connected:
 *
 * <ul>
 * <li>Machine Status - availability indicator (true / false)</li>
-* <li>Pieces - number of produced pieces</li>
-* <li>Pcs Ok - number of produced pieces of good quality</li>
-* <li>Pieces NOk - number produced pieces of bad quality</li>
+* <li>Amount - produced amount</li>
+* <li>Amt Ok - produced amount of good quality</li>
+* <li>Amt NOk - produced amount of bad quality</li>
 * <li>Quality Ok - quality indicator (true/false)</li>
 * </ul>
 *
 * Machine Status must always be provided, for the other three parameters the following combinations are allowed:
 * <ul>
-* <li>Pieces + Pcs Ok</li>
-* <li>Pieces + Quality Ok</li>
-* <li>Pcs Ok + Pcs NOk</li>
-* <li>Pieces + Pcs Ok</li>
+* <li>Amount + Amt Ok</li>
+* <li>Amount + Quality Ok</li>
+* <li>Amt Ok + Amt NOk</li>
+* <li>Amount + Amt Ok</li>
 * </ul>
 *
 * Furthermore, OEE calculation is influenced by the parameters with which the block is configured. OEE is 
 * calculated on a fixed interval and the interval defines this. Inputs during that interval are aggregated. 
 * For example for the machine status, all times during which the input was true are added up to calculate 
-* the availability. The piece counts (Pieces, Pieces Ok, Pieces NOk) are also aggregated. The first piece 
+* the availability. The amount counts (Amount, Amount Ok, Amount NOk) are also aggregated. The first amount 
 * count in an interval is split between the current and the previous interval proportionally to the time in 
-* the interval it reflects. If the last piece count in the previous interval was at 300s of 600s interval 
-* length and the first one in this interval happens after 150s, 66.6% of the pieces will be assigned to the
-* previous interval and 33.3% to the current interval in which the piece count was reported.
+* the interval it reflects. If the last amount count in the previous interval was at 300s of 600s interval 
+* length and the first one in this interval happens after 150s, 66.6% of the amount will be assigned to the
+* previous interval and 33.3% to the current interval in which the amount count was reported.
 * (More details: <a href="https://github.com/Cumulocity-IoT/oee-block/blob/main/docs/oee-theory/004splitting.md" target="_blank">Splitting</a>)
 *  
 * @$blockCategory Aggregates
@@ -101,9 +101,9 @@ event Oee {
     }
 
     action path() returns integer {
-        boolean apa := $base.getInputCount("pieces") = 1;
-        boolean aqa := $base.getInputCount("pieces_ok") = 1;
-        boolean qla := $base.getInputCount("pieces_nok") = 1;
+        boolean apa := $base.getInputCount("amount") = 1;
+        boolean aqa := $base.getInputCount("amount_ok") = 1;
+        boolean qla := $base.getInputCount("amount_nok") = 1;
         boolean qok := $base.getInputCount("qok") = 1;
         boolean status := $base.getInputCount("status") = 1;
         if(status and apa and aqa and not qla and not qok) {
@@ -423,9 +423,9 @@ event Oee {
     }
 
     constant string $INPUT_TYPE_status := "boolean";
-    constant string $INPUT_TYPE_pieces := "float";
-    constant string $INPUT_TYPE_pieces_ok := "float";
-    constant string $INPUT_TYPE_pieces_nok := "float";
+    constant string $INPUT_TYPE_amount := "float";
+    constant string $INPUT_TYPE_amount_ok := "float";
+    constant string $INPUT_TYPE_amount_nok := "float";
     constant string $INPUT_TYPE_qok := "boolean";
 
     /**
@@ -433,17 +433,17 @@ event Oee {
 	 * @param $input_status Machine availability status indicator.
      * @$inputName status Machine Status
      * @param $activation The current activation.
-	 * @param $input_pieces The produced piece count.
-     * @$inputName pieces Pieces
-	 * @param $input_pieces_ok The ok piece count.
-     * @$inputName pieces_ok Pcs Ok
-	 * @param $input_pieces_nok The not ok piece count.
-     * @$inputName pieces_nok Pcs NOk
+	 * @param $input_amount The produced amount count.
+     * @$inputName amount Amount
+	 * @param $input_amount_ok The ok amount count.
+     * @$inputName amount_ok Amt Ok
+	 * @param $input_amount_nok The not ok amount count.
+     * @$inputName amount_nok Amt NOk
 	 * @param $input_qok Quality indicator.
      * @$inputName qok Quality Ok
 	 */
-    action $process(Activation $activation, Value $input_status, Value $input_pieces, 
-                    Value $input_pieces_ok, Value $input_pieces_nok, Value $input_qok,
+    action $process(Activation $activation, Value $input_status, Value $input_amount, 
+                    Value $input_amount_ok, Value $input_amount_nok, Value $input_qok,
                     Oee_$State $blockState) {
         
         if($blockState.calculation_path=0) {
@@ -460,8 +460,8 @@ event Oee {
             $blockState.results[OEE.ACTUAL_QUALITY_AMOUNT].appendSequence(result);
         }
 
-        if(now($activation,$input_pieces)) {
-            CalculationValue iv := CalculationValue($input_pieces.timestamp, $input_pieces.value);
+        if(now($activation,$input_amount)) {
+            CalculationValue iv := CalculationValue($input_amount.timestamp, $input_amount.value);
             sequence<CalculationValue> result := applyToTransformationRule(OEE.ACTUAL_PRODUCTION_AMOUNT, $blockState.sep[OEE.ACTUAL_PRODUCTION_AMOUNT], $blockState.amountByQuality, iv);
             $blockState.results[OEE.ACTUAL_PRODUCTION_AMOUNT].appendSequence(result);
             ifpresent $blockState.amountByQuality as amountByQuality {   
@@ -475,14 +475,14 @@ event Oee {
             } 						
         }
 
-        if(now($activation,$input_pieces_ok)) {
-            CalculationValue iv := CalculationValue($input_pieces_ok.timestamp, $input_pieces_ok.value);
+        if(now($activation,$input_amount_ok)) {
+            CalculationValue iv := CalculationValue($input_amount_ok.timestamp, $input_amount_ok.value);
             sequence<CalculationValue> result := applyToTransformationRule(OEE.ACTUAL_QUALITY_AMOUNT, $blockState.sep[OEE.ACTUAL_QUALITY_AMOUNT], new optional<AmountByQualityState>, iv);
             $blockState.results[OEE.ACTUAL_QUALITY_AMOUNT].appendSequence(result);
         }
 
-        if(now($activation,$input_pieces_nok)) {
-            CalculationValue iv := CalculationValue($input_pieces_nok.timestamp, $input_pieces_nok.value);
+        if(now($activation,$input_amount_nok)) {
+            CalculationValue iv := CalculationValue($input_amount_nok.timestamp, $input_amount_nok.value);
             sequence<CalculationValue> result := applyToTransformationRule(OEE.QUALITY_LOSS_AMOUNT, $blockState.sep[OEE.QUALITY_LOSS_AMOUNT], new optional<AmountByQualityState>, iv);
             $blockState.results[OEE.QUALITY_LOSS_AMOUNT].appendSequence(result);
         }
@@ -508,7 +508,6 @@ event Oee {
         $blockState.results[$blockState.output1] := clear($blockState.results[$blockState.output1], toClear);
         $blockState.results[$blockState.output2] := clear($blockState.results[$blockState.output2], toClear);
         $blockState.results[$blockState.output3] := clear($blockState.results[$blockState.output3], toClear);
-        // TODO take into account machine status for other inputs
     }
 
     action roundResults(Value result) returns Value {
