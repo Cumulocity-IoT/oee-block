@@ -25,7 +25,7 @@ event Oee_$Parameters {
      * The interval for which the OEE should be calculated.
      **/
     float interval;
-    constant float $DEFAULT_interval := 600.0;
+    constant float $DEFAULT_interval := 3600.0;
 
     /**
      * Ideal Cycle Amount

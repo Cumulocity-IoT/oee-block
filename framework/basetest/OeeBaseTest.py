@@ -6,7 +6,7 @@ class OeeBaseTest(AnalyticsBuilderBaseTest):
 	def preInjectBlock(self, corr):
 		AnalyticsBuilderBaseTest.preInjectBlock(self, corr)
 		corr.injectEPL([self.project.APAMA_HOME +'/monitors/'+i+'.mon' for i in ['TimeFormatEvents']])
-		corr.injectEPL([self.project.SOURCE +'/eventdefinitions/'+i+'.mon' for i in ['Util','Parser','OEEEventDefinitions', 'ExpressionParser']])
+		corr.injectEPL([self.project.SOURCE +'/src/eventdefinitions/'+i+'.mon' for i in ['Util','Parser','OEEEventDefinitions', 'ExpressionParser']])
 
 
 	def details(self, selector, modelId='model_0', partitionId=None,time=None):

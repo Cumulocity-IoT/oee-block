@@ -17,7 +17,7 @@ Installation Steps:
 ```
 . $SAG_INSTALL/Apama/bin/apama_env
 ./apama-analytics-builder-block-sdk/analytics_builder build extension \
-      --input oee-block/blocks/  --name oee-block\
+      --input oee-block/src/  --name oee\
       --cumulocity_url https://$TENANT/ \
       --username $USERNAME --password $PASSWORD --restart
 ```

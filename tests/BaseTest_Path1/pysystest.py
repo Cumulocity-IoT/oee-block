@@ -11,7 +11,7 @@ import basetest.OeeBaseTest
 class PySysTest(OeeBaseTest):
     
 	def execute(self):
-		correlator = self.startAnalyticsBuilderCorrelator(blockSourceDir=f'{self.project.SOURCE}/blocks/')
+		correlator = self.startAnalyticsBuilderCorrelator(blockSourceDir=f'{self.project.SOURCE}/src/blocks/oee')
 		modelId = self.createTestModel('apamax.analyticsbuilder.oee.Oee', 
 								 inputs={'status':'boolean', 'amount':'float', 'amount_ok':'float' ,'amount_nok':None,'qok':None},
 								 parameters={'0:interval':60.0,'0:ica':10.0})	
