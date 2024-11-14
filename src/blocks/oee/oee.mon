@@ -489,31 +489,38 @@ event Oee {
 
         sequence<float> toClear := new sequence<float>; 
 
-        log "Output1 : " + $blockState.results[$blockState.output1] at INFO;
-        log "Output2 : " + $blockState.results[$blockState.output2] at INFO;
-        log "Output3 : " + $blockState.results[$blockState.output3] at INFO;
+        log "Output1 : " + $blockState.results[$blockState.output1] at DEBUG;
+        log "Output2 : " + $blockState.results[$blockState.output2] at DEBUG;
+        log "Output3 : " + $blockState.results[$blockState.output3] at DEBUG;
 
         CalculationValue output1;
+        float offset := 0.1;
         for output1 in $blockState.results[$blockState.output1] {
             optional<CalculationValue> output2 := findin($blockState.results[$blockState.output2],output1.time);
             optional<CalculationValue> output3 := findin($blockState.results[$blockState.output3],output1.time);
             ifpresent output2,output3 {
-                Value details := roundResults($blockState.oee_calculation($parameters.interval, <float>output1.value, <float>output2.value, <float>output3.value));
+                Value details := roundResults($blockState.oee_calculation($parameters.interval, <float>output1.value, <float>output2.value, <float>output3.value));                
                 details.value := true;
                 details.timestamp := output1.time;
-                $setOutput_oee($activation, <float>details.properties[OEE.OEE]);
-                $setOutput_availability($activation, <float>details.properties[OEE.AVAILABILTY]);
-                $setOutput_performance($activation, <float>details.properties[OEE.PERFORMANCE]);
-                $setOutput_quality($activation, <float>details.properties[OEE.QUALITY]);
-                $setOutput_timestamp($activation, output1.time);
-                $setOutput_details($activation, details);
+                $base.createTimerWith(TimerParams.relative(offset).withPayload(details));
                 toClear.append(output1.time);
+                offset := offset + 0.1;
             }
         }
         $blockState.results[$blockState.output1] := clear($blockState.results[$blockState.output1], toClear);
         $blockState.results[$blockState.output2] := clear($blockState.results[$blockState.output2], toClear);
         $blockState.results[$blockState.output3] := clear($blockState.results[$blockState.output3], toClear);
     }
+
+    action $timerTriggered(Activation $activation, Value $payload) {
+        $setOutput_oee($activation, <float>$payload.properties[OEE.OEE]);
+        $setOutput_availability($activation, <float>$payload.properties[OEE.AVAILABILTY]);
+        $setOutput_performance($activation, <float>$payload.properties[OEE.PERFORMANCE]);
+        $setOutput_quality($activation, <float>$payload.properties[OEE.QUALITY]);
+        $setOutput_timestamp($activation, $payload.timestamp);
+        $setOutput_details($activation, $payload);
+    }
+
 
     action roundResults(Value result) returns Value {
         string key;
