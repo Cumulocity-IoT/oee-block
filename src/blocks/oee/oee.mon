@@ -488,6 +488,11 @@ event Oee {
         }
 
         sequence<float> toClear := new sequence<float>; 
+
+        log "Output1 : " + $blockState.results[$blockState.output1] at INFO;
+        log "Output2 : " + $blockState.results[$blockState.output2] at INFO;
+        log "Output3 : " + $blockState.results[$blockState.output3] at INFO;
+
         CalculationValue output1;
         for output1 in $blockState.results[$blockState.output1] {
             optional<CalculationValue> output2 := findin($blockState.results[$blockState.output2],output1.time);
