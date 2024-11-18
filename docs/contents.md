@@ -12,5 +12,8 @@ TODO
 * [Calculation pathways](oee-theory/006calculation-pathways.md)
 
 ## User Guide
+* [Introduction](userguide/001introduction.md)
+* [Basic Usage](userguide/002basic.md)
+* [Advanced Scenarios](userguide/003advanced.md)
 
 ## Developer Guide
