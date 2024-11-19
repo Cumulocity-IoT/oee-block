@@ -35,7 +35,7 @@ activation an belong together:
 * **Performance** - The calculated performance for the interval.
 * **Quality** - The calculated quality for the interval.
 * **Timestamp** - The timestamp marking the end of the calculated interval.
-* **Details** - All components of the OEE calculation in the form of a pulse output: OEE, Availability, Performance, Quality, Actual Production Amount, Actual Production Time, Actual Quality Amount, Ideal Amount, Ideal Cycle Time, Ideal Qualiy Time, Ideal Machine Runtime, Quality Loss Amount, Availability Loss Amount, Performance Loss Amount, Performance Loss Time, Quality Loss Time, Availability Loss Time.
+* **Details** - All components of the OEE calculation in the form of a pulse output: OEE, Availability, Performance, Quality, Actual Production Amount, Actual Production Time, Actual Quality Amount, Ideal Amount, Ideal Cycle Time, Ideal Quality Time, Ideal Machine Runtime, Quality Loss Amount, Availability Loss Amount, Performance Loss Amount, Performance Loss Time, Quality Loss Time, Availability Loss Time.
 
 ## Understanding asynchronous output
 The OEE block provides output once for each interval representing the calculated OEE value for that interval. This value will be produced at some point in time after the interval concluded. As explained in the OEE theory section [here](oee-theory/004splitting.md), the OEE block splits amount proportionally to the intervals to which the amount relate. To be able to do this, the OEE calculation can only be concluded once an amount input is received for each of the configured amounts after the interval concluded.
