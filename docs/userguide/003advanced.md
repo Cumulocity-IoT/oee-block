@@ -1,4 +1,4 @@
-# Advanced Scenarios
+# User Guide - Advanced Scenarios
 This section shows some examples of more complex behavior that can be achieved with the OEE block.
 
 ## Raising Alarms on Outputs

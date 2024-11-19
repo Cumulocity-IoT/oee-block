@@ -1,4 +1,4 @@
-# Basic Usage
+# User Guide Basic Usage
 Let us now create an Analytics Buidler model to calculate OEE for a machine. A good starting point is the **Normal #1** simulator from the [oee-simulators](https://github.com/Cumulocity-IoT/oee-simulators) project, which produces the following data:
 
 * **Availability**: the simulator produces an `Availability` event which has a field `status` that is either `up` or `down`. This event is produced 5-10 times per hour with 90% being `up`.
