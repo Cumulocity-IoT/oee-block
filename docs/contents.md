@@ -12,15 +12,13 @@ The **OEE Theory** is taken from the official documentation of the Cumulocity OE
 
 ## Developer Guide
 
+* [Modify OEE calculation](developerguide/001calculation.md)
+* [Modify inputs](developerguide/002inputs.md)
+* [Modify outputs](developerguide/003outputs.md)
+* [Contribution Guide](developerguide/004contribution.md)
+
 If you identify a bug or want to suggest feature requests, please raise a ticket here:
 https://github.com/Cumulocity-IoT/oee-block/issues
-
-If you want to contribute changes or features, please follow the instructions given here:
-https://github.com/Cumulocity-IoT/oee-block/blob/main/docs/contents.md#developer-guide
-
-* Modify OEE calculation
-* Rename & add parameters
-* Understanding state and amount calculations
 
 ## OEE Theory
 * [OEE model](oee-theory/001oee-model.md)

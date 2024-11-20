@@ -187,19 +187,15 @@ event Oee {
             tisep.cleanup(tisep.currentInterval.start);
         }
         if (stateChanged) {
-            addMachineStatus($blockState, MachineStatus.build(OEE.machineStatus(tisep.state)).forTime(iv.time));
+            MachineStatus status := MachineStatus.build(OEE.machineStatus(tisep.state)).forTime(iv.time);
+            string id;
+            for id in $blockState.sep.keys() {
+                StatefulExpressionParser sep := $blockState.sep[id];
+                sep.currentInterval.appendStatus(status);
+            }
         }
         return result;
 	}
-
-    action addMachineStatus(Oee_$State $blockState, MachineStatus status) {
-        string id;
-        for id in $blockState.sep.keys() {
-            StatefulExpressionParser sep := $blockState.sep[id];
-            sep.currentInterval.appendStatus(status);
-        }
-
-    }
 
 	action applyToQualityStatus(TimeInStateExpressionParser tisep, AmountByQualityState amountByQuality, CalculationValue iv) {
         boolean statusChanged := tisep.evaluateWith(iv);
@@ -226,7 +222,7 @@ event Oee {
     }
 
 
-	action applyToTransformationRule(string inputName, StatefulExpressionParser sep, optional<AmountByQualityState> amountByQuality, CalculationValue iv) returns sequence<CalculationValue> {
+	action applyToTransformationRule(StatefulExpressionParser sep, optional<AmountByQualityState> amountByQuality, CalculationValue iv) returns sequence<CalculationValue> {
         sequence<CalculationValue> result := new sequence<CalculationValue>;
 
         if(sep.currentInterval.isIn(iv.time)) {
@@ -462,7 +458,7 @@ event Oee {
 
         if(now($activation,$input_amount)) {
             CalculationValue iv := CalculationValue($input_amount.timestamp, $input_amount.value);
-            sequence<CalculationValue> result := applyToTransformationRule(OEE.ACTUAL_PRODUCTION_AMOUNT, $blockState.sep[OEE.ACTUAL_PRODUCTION_AMOUNT], $blockState.amountByQuality, iv);
+            sequence<CalculationValue> result := applyToTransformationRule($blockState.sep[OEE.ACTUAL_PRODUCTION_AMOUNT], $blockState.amountByQuality, iv);
             $blockState.results[OEE.ACTUAL_PRODUCTION_AMOUNT].appendSequence(result);
             ifpresent $blockState.amountByQuality as amountByQuality {   
                 CalculationValue ia;
@@ -477,13 +473,13 @@ event Oee {
 
         if(now($activation,$input_amount_ok)) {
             CalculationValue iv := CalculationValue($input_amount_ok.timestamp, $input_amount_ok.value);
-            sequence<CalculationValue> result := applyToTransformationRule(OEE.ACTUAL_QUALITY_AMOUNT, $blockState.sep[OEE.ACTUAL_QUALITY_AMOUNT], new optional<AmountByQualityState>, iv);
+            sequence<CalculationValue> result := applyToTransformationRule($blockState.sep[OEE.ACTUAL_QUALITY_AMOUNT], new optional<AmountByQualityState>, iv);
             $blockState.results[OEE.ACTUAL_QUALITY_AMOUNT].appendSequence(result);
         }
 
         if(now($activation,$input_amount_nok)) {
             CalculationValue iv := CalculationValue($input_amount_nok.timestamp, $input_amount_nok.value);
-            sequence<CalculationValue> result := applyToTransformationRule(OEE.QUALITY_LOSS_AMOUNT, $blockState.sep[OEE.QUALITY_LOSS_AMOUNT], new optional<AmountByQualityState>, iv);
+            sequence<CalculationValue> result := applyToTransformationRule($blockState.sep[OEE.QUALITY_LOSS_AMOUNT], new optional<AmountByQualityState>, iv);
             $blockState.results[OEE.QUALITY_LOSS_AMOUNT].appendSequence(result);
         }
 

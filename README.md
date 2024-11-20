@@ -27,7 +27,7 @@ Can be found [here](https://github.com/Cumulocity-IoT/oee-block/blob/main/docs/c
 ## How to contribute
 For any bugs or feature requests, please raise a ticket on the GitHub repository.
 
-If you want to contribute to the block, please fork the the repository and follow the [Developer Guide](https://github.com/Cumulocity-IoT/oee-block/blob/main/docs/contents.md#developer-guide).
+If you want to contribute to the block, please fork the the repository and follow the [Developer Guide](https://github.com/Cumulocity-IoT/oee-block/blob/main/docs/developerguide/004contribution.md).
 
 ## Licensing
 
