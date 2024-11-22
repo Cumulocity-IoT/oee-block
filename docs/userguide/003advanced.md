@@ -7,7 +7,7 @@ A straightforward modification to the simple model, is to raise an alarm instead
 ![Alarm Output](/docs/images/alarmoutput.png)
 
 ## Additional Mapping of Inputs
-The simple example counted events to determine performance and quality but you can use the full power of Analytics Builder to prepare the input data. IF you used the  **Normal #2** simulator from the [oee-simulators](https://github.com/Cumulocity-IoT/oee-simulators) project, it uses `Pieces_Produced` and `Pieces_Ok` events which each contain the count of produced and of good pieces. So instead of counting events, you have to extract the counts from the events using the **Extract Property** block. Make sure to select float as the property type.
+The simple example counted events to determine performance and quality but you can use the full power of Analytics Builder to prepare the input data. If you used the  **Normal #2** simulator from the [oee-simulators](https://github.com/Cumulocity-IoT/oee-simulators) project, it uses `Pieces_Produced` and `Pieces_Ok` events which each contain the count of produced and of good pieces. So instead of counting events, you have to extract the counts from the events using the **Extract Property** block. Make sure to select float as the property type.
 
 ![Extract counts](/docs/images/normal2.png)
 
@@ -21,10 +21,10 @@ Calculating the OEE of a group of devices can be achieved through various means.
 
 ![Group OEE](/docs/images/groupoee.png)
 
-If the group of devices is a line, calculating the average probably does not make much sense. The **Expression** block could be used to calculate the product of the individual device OEEs. If all device contribute to the OEE differently, the OEE block could use data from different devices. Availability could be derived by combining the individual device status using the logical blocks **AND**, **OR**, and **NOT**. Data from one device could be used as the amount input for performance calculation and another machine could be used to calculate ok or faulty pieces.
+If the group of devices is a line, calculating the average probably does not make much sense. The **Expression** block could be used to calculate the product of the individual device OEEs. If all devices contribute to the OEE differently, the OEE block could use data from different devices. Availability could be derived by combining the individual device status using the logical blocks **AND**, **OR**, and **NOT**. Data from one device could be used as the amount input for performance calculation and another machine could be used to calculate ok or faulty pieces.
 
 ## Shift Plans
-Shift plans allow to control when OEE is calculated. The OEE block does not support shift plans out of the box but they can be achieved using other blocks. Below example uses **Cron Timer** blocks scheduled at 8:00am and 4:00pm to open and close a **Gate** block. The gated value is the amount for the performance calculation of the OEE block. The **Gate** block is configued with a null value of 0 meaning that at 4:00pm each day an amount of 0 is sent to finalize the last calculation.
+Shift plans allow to control when OEE is calculated. The OEE block does not support shift plans out of the box but they can be achieved using other blocks. Below example uses **Cron Timer** blocks scheduled at 8:00am and 4:00pm to open and close a **Gate** block. The gated value is the amount for the performance calculation of the OEE block. The **Gate** block is configured with a null value of 0 meaning that at 4:00pm each day an amount of 0 is sent to finalize the last calculation.
 
 ![Shift Plan using Cron Timer](/docs/images/shiftplan.png)
 
@@ -33,4 +33,4 @@ Note that the OEE block would still create OEE calculation results for the time 
 Besides using **Cron Timer** the information to start and end shifts can also come as measurements or events or from other data sources using custom blocks.
 
 ## Production Plans
-Production plans define what is being produced in what quantity at what time. Currently, the OEE App does not support production plans directly as the ideal cycle amount is configured as a parameter. A workaround is to have multiple models or to use a template parameter for the ideal cycle amount and have multiple instances of the model and to control when each model is calculating OEE using similar mechanisms like the ones employed for shift plans above. This will only work if production plans are more or less stable.
+Production plans define what is being produced in what quantity at what time. Currently, the OEE Block does not support production plans directly as the ideal cycle amount is configured as a parameter. A workaround is to have multiple models or to use a template parameter for the ideal cycle amount and have multiple instances of the model and to control when each model is calculating OEE using similar mechanisms like the ones employed for shift plans above. This will only work if production plans are more or less stable.
